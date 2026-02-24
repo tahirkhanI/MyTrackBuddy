@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-50 text-zinc-900 antialiased selection:bg-zinc-900 selection:text-white;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-zinc-200/60 rounded-2xl shadow-sm transition-all duration-200;
+  }
+
+  .input-field {
+    @apply w-full px-4 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900/5 focus:border-zinc-900 outline-none transition-all placeholder:text-zinc-400 font-medium;
+  }
+
+  .btn-primary {
+    @apply px-6 py-2.5 bg-zinc-900 text-white rounded-xl font-bold hover:bg-zinc-800 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-2.5 bg-white text-zinc-900 border border-zinc-200 rounded-xl font-bold hover:bg-zinc-50 active:scale-[0.98] transition-all disabled:opacity-50;
+  }
+
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-200 rounded-full hover:bg-zinc-300 transition-colors;
+}
+
+/* Recharts Customization */
+.recharts-cartesian-grid-horizontal line {
+  stroke: #f4f4f5;
+}
+
+.recharts-tooltip-cursor {
+  fill: #f4f4f5;
+}
