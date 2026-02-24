@@ -1,60 +1,148 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { Transaction, Budget, SavingsGoal, User } from './types';
-import { api } from './api';
-import { format, subMonths, parseISO, isSameMonth } from 'date-fns';
+import { auth, db } from './firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc, 
+  updateDoc,
+  increment,
+  getDocs
+} from 'firebase/firestore';
+import { format, subMonths, parseISO } from 'date-fns';
 
 interface FinanceContextType {
-  user: User | null;
+  user: FirebaseUser | null;
   transactions: Transaction[];
   budgets: Budget[];
   savings: SavingsGoal[];
   loading: boolean;
-  refreshData: () => Promise<void>;
   stats: any;
   chartData: any;
   categoryData: any;
   healthScore: number;
   streak: number;
   badges: string[];
+  // Actions
+  addTransaction: (tx: Omit<Transaction, 'id' | 'user_id'>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
+  saveBudget: (budget: Omit<Budget, 'id' | 'user_id'>) => Promise<void>;
+  addSavingsGoal: (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount'>) => Promise<void>;
+  contributeToSavings: (id: string, amount: number) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
-export const FinanceProvider: React.FC<{ children: React.ReactNode, token: string | null }> = ({ children, token }) => {
-  const [user, setUser] = useState<User | null>(null);
+export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savings, setSavings] = useState<SavingsGoal[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refreshData = async () => {
-    if (!token) return;
-    try {
-      const [me, txs, bgs, svg] = await Promise.all([
-        api.auth.me(),
-        api.transactions.list(),
-        api.budgets.list(),
-        api.savings.list()
-      ]);
-      setUser(me.user);
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      if (!firebaseUser) {
+        setTransactions([]);
+        setBudgets([]);
+        setSavings([]);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    setLoading(true);
+
+    // Real-time listeners for user data
+    const qTxs = query(collection(db, 'transactions'), where('user_id', '==', user.uid));
+    const unsubTxs = onSnapshot(qTxs, (snapshot) => {
+      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Transaction));
       setTransactions(txs);
+    });
+
+    const qBudgets = query(collection(db, 'budgets'), where('user_id', '==', user.uid));
+    const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
+      const bgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Budget));
       setBudgets(bgs);
+    });
+
+    const qSavings = query(collection(db, 'savings'), where('user_id', '==', user.uid));
+    const unsubSavings = onSnapshot(qSavings, (snapshot) => {
+      const svg = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as SavingsGoal));
       setSavings(svg);
-    } catch (err) {
-      console.error('Failed to fetch data', err);
-    } finally {
       setLoading(false);
+    });
+
+    return () => {
+      unsubTxs();
+      unsubBudgets();
+      unsubSavings();
+    };
+  }, [user]);
+
+  // Actions
+  const addTransaction = async (tx: Omit<Transaction, 'id' | 'user_id'>) => {
+    if (!user) return;
+    await addDoc(collection(db, 'transactions'), {
+      ...tx,
+      user_id: user.uid,
+      created_at: new Date().toISOString()
+    });
+  };
+
+  const deleteTransaction = async (id: string) => {
+    await deleteDoc(doc(db, 'transactions', id));
+  };
+
+  const saveBudget = async (budget: Omit<Budget, 'id' | 'user_id'>) => {
+    if (!user) return;
+    // Check if budget for this month exists
+    const q = query(
+      collection(db, 'budgets'), 
+      where('user_id', '==', user.uid), 
+      where('month', '==', budget.month)
+    );
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const budgetId = snapshot.docs[0].id;
+      await updateDoc(doc(db, 'budgets', budgetId), { amount: budget.amount });
+    } else {
+      await addDoc(collection(db, 'budgets'), {
+        ...budget,
+        user_id: user.uid
+      });
     }
   };
 
-  useEffect(() => {
-    if (token) {
-      refreshData();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+  const addSavingsGoal = async (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount'>) => {
+    if (!user) return;
+    await addDoc(collection(db, 'savings'), {
+      ...goal,
+      user_id: user.uid,
+      current_amount: 0
+    });
+  };
 
+  const contributeToSavings = async (id: string, amount: number) => {
+    await updateDoc(doc(db, 'savings', id), {
+      current_amount: increment(amount)
+    });
+  };
+
+  // Stats calculation (same as before)
   const stats = useMemo(() => {
     const now = new Date();
     const currentMonth = format(now, 'yyyy-MM');
@@ -73,10 +161,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode, token: strin
     const expenseTrend = lastExpenses ? Math.round(((expenses - lastExpenses) / lastExpenses) * 100) : 0;
 
     const currentBudget = budgets.find(b => b.month === currentMonth)?.amount || 0;
-    
     const savingsRate = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0;
 
-    // Most expensive category
     const cats: Record<string, number> = {};
     monthlyTxs.filter(t => t.type === 'expense').forEach(t => {
       cats[t.category] = (cats[t.category] || 0) + t.amount;
@@ -96,7 +182,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode, token: strin
   }, [transactions, budgets]);
 
   const healthScore = useMemo(() => {
-    let score = 50; // Base score
+    let score = 50;
     if (stats.currentBudget > 0) {
       const budgetUsage = stats.expenses / stats.currentBudget;
       if (budgetUsage <= 1) score += 20;
@@ -108,7 +194,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode, token: strin
   }, [stats]);
 
   const streak = useMemo(() => {
-    // Simple streak calculation: months with positive balance
     let currentStreak = 0;
     for (let i = 0; i < 12; i++) {
       const m = format(subMonths(new Date(), i), 'yyyy-MM');
@@ -118,7 +203,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode, token: strin
       if (inc > exp && inc > 0) {
         currentStreak++;
       } else if (i === 0) {
-        continue; // Current month might not be finished
+        continue;
       } else {
         break;
       }
@@ -163,13 +248,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode, token: strin
       budgets, 
       savings, 
       loading, 
-      refreshData, 
       stats, 
       chartData, 
       categoryData,
       healthScore,
       streak,
-      badges
+      badges,
+      addTransaction,
+      deleteTransaction,
+      saveBudget,
+      addSavingsGoal,
+      contributeToSavings
     }}>
       {children}
     </FinanceContext.Provider>

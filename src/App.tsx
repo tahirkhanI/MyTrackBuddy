@@ -51,7 +51,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { api } from './api';
+import { auth } from './firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
 import { Transaction, Budget, SavingsGoal, User } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -97,20 +105,36 @@ const savingsSchema = z.object({
 // --- Main App Component ---
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-
   return (
-    <FinanceProvider token={token}>
-      <AppContent token={token} setToken={setToken} />
+    <FinanceProvider>
+      <AppContent />
     </FinanceProvider>
   );
 }
 
-function AppContent({ token, setToken }: { token: string | null, setToken: (t: string | null) => void }) {
-  const { user, loading, stats, chartData, categoryData, transactions, budgets, savings, healthScore, streak, badges, refreshData } = useFinance();
+function AppContent() {
+  const { 
+    user, 
+    loading, 
+    stats, 
+    chartData, 
+    categoryData, 
+    transactions, 
+    budgets, 
+    savings, 
+    healthScore, 
+    streak, 
+    badges,
+    addTransaction,
+    deleteTransaction,
+    saveBudget,
+    addSavingsGoal,
+    contributeToSavings
+  } = useFinance();
   const [view, setView] = useState<'dashboard' | 'transactions' | 'budgets' | 'savings'>('dashboard');
   const [isAuthMode, setIsAuthMode] = useState<'login' | 'register'>('login');
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [modalType, setModalType] = useState<'transaction' | 'savings' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -127,21 +151,60 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
     setIsSidebarOpen(false);
   }, [view]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
+  const handleLogout = async () => {
+    await signOut(auth);
   };
 
   const handleLogin = async (data: any) => {
-    const res = await api.auth.login(data);
-    localStorage.setItem('token', res.token);
-    setToken(res.token);
+    setAuthError(null);
+    try {
+      await signInWithEmailAndPassword(auth, data.email, data.password);
+    } catch (error: any) {
+      console.error('Login Error:', error.code, error.message);
+      if (error.code === 'auth/unauthorized-domain') {
+        setAuthError('This domain is not authorized in Firebase. Please add this URL to "Authorized domains" in your Firebase Console.');
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        setAuthError('Invalid email or password. Please check your credentials and try again.');
+      } else if (error.code === 'auth/invalid-email') {
+        setAuthError('Please enter a valid email address.');
+      } else {
+        setAuthError(`Authentication error: ${error.message}`);
+      }
+    }
   };
 
   const handleRegister = async (data: any) => {
-    const res = await api.auth.register(data);
-    localStorage.setItem('token', res.token);
-    setToken(res.token);
+    setAuthError(null);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      await updateProfile(userCredential.user, { displayName: data.name });
+    } catch (error: any) {
+      console.error('Registration Error:', error.code, error.message);
+      if (error.code === 'auth/unauthorized-domain') {
+        setAuthError('This domain is not authorized in Firebase. Please add this URL to "Authorized domains" in your Firebase Console.');
+      } else if (error.code === 'auth/email-already-in-use') {
+        setAuthError('An account with this email already exists. Please log in.');
+      } else if (error.code === 'auth/weak-password') {
+        setAuthError('Password is too weak. Please use at least 6 characters.');
+      } else {
+        setAuthError(`Registration error: ${error.message}`);
+      }
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError(null);
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error('Google Login Error:', error.code, error.message);
+      if (error.code === 'auth/unauthorized-domain') {
+        setAuthError('This domain is not authorized for Google Sign-In. Please add this URL to "Authorized domains" in your Firebase Console.');
+      } else if (error.code !== 'auth/popup-closed-by-user') {
+        setAuthError(`Google Sign-In failed: ${error.message}`);
+      }
+    }
   };
 
   const exportPDF = () => {
@@ -150,7 +213,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
     doc.text('EduFinance Summary Report', 14, 22);
     doc.setFontSize(12);
     doc.text(`Generated on: ${format(new Date(), 'PPP')}`, 14, 30);
-    doc.text(`User: ${user?.name}`, 14, 38);
+    doc.text(`User: ${user?.displayName || user?.email}`, 14, 38);
 
     doc.autoTable({
       startY: 45,
@@ -196,11 +259,16 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
         <AuthForm 
           mode={isAuthMode} 
           onSubmit={isAuthMode === 'login' ? handleLogin : handleRegister} 
+          onGoogleLogin={handleGoogleLogin}
+          error={authError}
         />
 
         <div className="mt-6 text-center">
           <button 
-            onClick={() => setIsAuthMode(isAuthMode === 'login' ? 'register' : 'login')}
+            onClick={() => {
+              setIsAuthMode(isAuthMode === 'login' ? 'register' : 'login');
+              setAuthError(null);
+            }}
             className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"
           >
             {isAuthMode === 'login' ? "Don't have an account? Sign up" : "Already have an account? Log in"}
@@ -230,7 +298,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
         </div>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-xs">
-            {user.name[0]}
+            {user.displayName?.[0] || user.email?.[0]}
           </div>
         </div>
       </header>
@@ -304,10 +372,10 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-50 mb-4">
               <div className="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center font-bold text-zinc-600 shrink-0">
-                {user.name[0]}
+                {user.displayName?.[0] || user.email?.[0]}
               </div>
               <div className="overflow-hidden">
-                <p className="text-sm font-bold truncate">{user.name}</p>
+                <p className="text-sm font-bold truncate">{user.displayName || 'User'}</p>
                 <p className="text-xs text-zinc-500 truncate">{user.email}</p>
               </div>
             </div>
@@ -333,14 +401,14 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
             <h1 className="text-3xl font-bold text-zinc-900">
               {view.charAt(0).toUpperCase() + view.slice(1)}
             </h1>
-            <p className="text-zinc-500">Welcome back, {user.name.split(' ')[0]}!</p>
+            <p className="text-zinc-500">Welcome back, {(user.displayName || user.email || '').split(' ')[0]}!</p>
           </div>
           <div className="flex gap-3">
             <button onClick={exportPDF} className="btn-secondary flex items-center gap-2 min-h-[44px]">
               <Download className="w-4 h-4" />
               PDF Report
             </button>
-            <button onClick={() => setShowAddModal(true)} className="btn-primary flex items-center gap-2 min-h-[44px]">
+            <button onClick={() => setModalType('transaction')} className="btn-primary flex items-center gap-2 min-h-[44px]">
               <Plus className="w-4 h-4" />
               Add Transaction
             </button>
@@ -364,7 +432,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
                     {streak} Month Streak
                   </div>
                 </div>
-                <h2 className="text-xl text-zinc-400 mb-1">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {user.name.split(' ')[0]} 👋</h2>
+                <h2 className="text-xl text-zinc-400 mb-1">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {(user.displayName || user.email || '').split(' ')[0]} 👋</h2>
                 <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-12">
                   <div>
                     <p className="text-sm text-zinc-400 mb-1">Total Balance</p>
@@ -579,10 +647,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
             transactions={transactions} 
             filters={txFilters} 
             setFilters={setTxFilters} 
-            onDelete={async (id) => {
-              await api.transactions.delete(id);
-              refreshData();
-            }}
+            onDelete={deleteTransaction}
             exportCSV={() => {
               const headers = ['Date', 'Type', 'Category', 'Amount', 'Method', 'Notes'];
               const rows = transactions.map(t => [t.date, t.type, t.category, t.amount, t.payment_method || '', t.notes || '']);
@@ -602,10 +667,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
               <h3 className="text-xl font-bold mb-6">Set Monthly Budget</h3>
               <BudgetForm 
                 currentMonth={format(new Date(), 'yyyy-MM')}
-                onSave={async (data) => {
-                  await api.budgets.save(data);
-                  refreshData();
-                }} 
+                onSave={saveBudget} 
               />
             </Card>
 
@@ -659,7 +721,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
           <div className="space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <button 
-                onClick={() => setShowAddModal(true)}
+                onClick={() => setModalType('savings')}
                 className="card p-6 border-dashed border-2 border-zinc-200 flex flex-col items-center justify-center text-center hover:bg-zinc-50 transition-all cursor-pointer min-h-[200px] group"
               >
                 <div className="bg-zinc-100 p-4 rounded-full mb-4 group-hover:scale-110 transition-transform">
@@ -702,8 +764,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
                         onClick={async () => {
                           const amount = parseFloat(prompt('How much would you like to contribute?') || '0');
                           if (amount > 0) {
-                            await api.savings.contribute(goal.id, amount);
-                            refreshData();
+                            await contributeToSavings(goal.id, amount);
                           }
                         }}
                         className="btn-primary flex-1 text-xs py-3"
@@ -725,7 +786,7 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
         <BottomNavItem active={view === 'transactions'} onClick={() => setView('transactions')} icon={Receipt} />
         <div className="relative -top-6">
           <button 
-            onClick={() => setShowAddModal(true)}
+            onClick={() => setModalType('transaction')}
             className="bg-zinc-900 text-white p-4 rounded-2xl shadow-xl shadow-zinc-900/40 active:scale-95 transition-transform"
           >
             <Plus className="w-6 h-6" />
@@ -735,15 +796,15 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
         <BottomNavItem active={view === 'savings'} onClick={() => setView('savings')} icon={Target} />
       </nav>
 
-      {/* Add Transaction Modal */}
+      {/* Modals */}
       <AnimatePresence>
-        {showAddModal && (
+        {modalType && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setShowAddModal(false)}
+              onClick={() => setModalType(null)}
               className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
             />
             <motion.div 
@@ -753,20 +814,31 @@ function AppContent({ token, setToken }: { token: string | null, setToken: (t: s
               className="bg-white rounded-3xl w-full max-w-lg p-8 relative z-10 shadow-2xl"
             >
               <button 
-                onClick={() => setShowAddModal(false)}
+                onClick={() => setModalType(null)}
                 className="absolute right-6 top-6 text-zinc-400 hover:text-zinc-900 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
               
-              <h3 className="text-xl font-bold mb-6">Add New Transaction</h3>
-              <TransactionForm 
-                onSubmit={async (data) => {
-                  await api.transactions.create(data);
-                  refreshData();
-                  setShowAddModal(false);
-                }} 
-              />
+              <h3 className="text-xl font-bold mb-6">
+                {modalType === 'transaction' ? 'Add New Transaction' : 'Create Savings Goal'}
+              </h3>
+              
+              {modalType === 'transaction' ? (
+                <TransactionForm 
+                  onSubmit={async (data: any) => {
+                    await addTransaction(data);
+                    setModalType(null);
+                  }} 
+                />
+              ) : (
+                <SavingsGoalForm 
+                  onSubmit={async (data: any) => {
+                    await addSavingsGoal(data);
+                    setModalType(null);
+                  }} 
+                />
+              )}
             </motion.div>
           </div>
         )}
@@ -963,34 +1035,81 @@ const TransactionsView = ({ transactions, filters, setFilters, onDelete, exportC
   );
 };
 
-const AuthForm = ({ mode, onSubmit }: any) => {
+const AuthForm = ({ mode, onSubmit, onGoogleLogin, error }: any) => {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof loginSchema | typeof registerSchema>>({
     resolver: zodResolver(mode === 'login' ? loginSchema : registerSchema)
   });
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {mode === 'register' && (
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-3 rounded-xl bg-rose-50 border border-rose-100 flex items-center gap-3 text-rose-600 text-sm font-medium"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {error}
+          </motion.div>
+        )}
+        {mode === 'register' && (
+          <div>
+            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Full Name</label>
+            <input {...register('name' as any)} className="input-field h-12" placeholder="John Doe" />
+            {(errors as any).name && <p className="text-rose-500 text-xs mt-1.5 font-medium">Name is required</p>}
+          </div>
+        )}
         <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Full Name</label>
-          <input {...register('name' as any)} className="input-field h-12" placeholder="John Doe" />
-          {(errors as any).name && <p className="text-rose-500 text-xs mt-1.5 font-medium">Name is required</p>}
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Email Address</label>
+          <input {...register('email')} className="input-field h-12" placeholder="john@example.com" />
+          {errors.email && <p className="text-rose-500 text-xs mt-1.5 font-medium">Valid email is required</p>}
         </div>
-      )}
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Email Address</label>
-        <input {...register('email')} className="input-field h-12" placeholder="john@example.com" />
-        {errors.email && <p className="text-rose-500 text-xs mt-1.5 font-medium">Valid email is required</p>}
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Password</label>
+          <input {...register('password')} type="password" className="input-field h-12" placeholder="••••••••" />
+          {errors.password && <p className="text-rose-500 text-xs mt-1.5 font-medium">Password must be at least 6 chars</p>}
+        </div>
+        <button disabled={isSubmitting} className="btn-primary w-full mt-2 py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
+          {isSubmitting ? 'Processing...' : mode === 'login' ? 'Log In' : 'Create Account'}
+        </button>
+      </form>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-200"></div>
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-white px-2 text-zinc-400 font-bold tracking-wider">Or continue with</span>
+        </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Password</label>
-        <input {...register('password')} type="password" className="input-field h-12" placeholder="••••••••" />
-        {errors.password && <p className="text-rose-500 text-xs mt-1.5 font-medium">Password must be at least 6 chars</p>}
-      </div>
-      <button disabled={isSubmitting} className="btn-primary w-full mt-6 py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
-        {isSubmitting ? 'Processing...' : mode === 'login' ? 'Log In' : 'Create Account'}
+
+      <button 
+        type="button"
+        onClick={onGoogleLogin}
+        className="w-full flex items-center justify-center gap-3 px-4 py-3.5 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors font-bold text-sm"
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path
+            fill="#4285F4"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+          />
+        </svg>
+        Sign in with Google
       </button>
-    </form>
+    </div>
   );
 };
 
@@ -1066,6 +1185,34 @@ const BudgetForm = ({ currentMonth, onSave }: any) => {
       </div>
       <button disabled={isSubmitting} className="btn-primary w-full sm:w-auto px-8 py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
         Save
+      </button>
+    </form>
+  );
+};
+
+const SavingsGoalForm = ({ onSubmit }: any) => {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof savingsSchema>>({
+    resolver: zodResolver(savingsSchema)
+  });
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Goal Name</label>
+        <input {...register('name')} className="input-field h-12" placeholder="e.g., New Laptop, Vacation" />
+        {errors.name && <p className="text-rose-500 text-xs mt-1.5 font-medium">Goal name is required</p>}
+      </div>
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Target Amount</label>
+        <input {...register('target_amount', { valueAsNumber: true })} type="number" step="0.01" className="input-field h-12" placeholder="0.00" />
+        {errors.target_amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Target amount is required</p>}
+      </div>
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Deadline (Optional)</label>
+        <input {...register('deadline')} type="date" className="input-field h-12" />
+      </div>
+      <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
+        {isSubmitting ? 'Saving...' : 'Create Goal'}
       </button>
     </form>
   );
