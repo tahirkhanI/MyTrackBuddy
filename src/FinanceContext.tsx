@@ -60,6 +60,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setDebts([]);
         setLoading(false);
       }
+    }, (error) => {
+      console.error("Auth State Error:", error);
+      setLoading(false);
     });
 
     return () => unsubscribeAuth();
@@ -70,27 +73,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setLoading(true);
 
+    const handleError = (error: any) => {
+      console.error("Firestore Listener Error:", error);
+      if (error.code === 'permission-denied') {
+        console.warn("Permission denied. Check your Firestore security rules.");
+      }
+      setLoading(false);
+    };
+
     // Real-time listeners for user data using nested paths
     const unsubTxs = onSnapshot(collection(db, 'users', user.uid, 'transactions'), (snapshot) => {
       const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Transaction));
       setTransactions(txs);
-    });
+    }, handleError);
 
     const unsubBudgets = onSnapshot(collection(db, 'users', user.uid, 'budgets'), (snapshot) => {
       const bgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Budget));
       setBudgets(bgs);
-    });
+    }, handleError);
 
     const unsubSavings = onSnapshot(collection(db, 'users', user.uid, 'savings'), (snapshot) => {
       const svg = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as SavingsGoal));
       setSavings(svg);
-    });
+    }, handleError);
 
     const unsubDebts = onSnapshot(collection(db, 'users', user.uid, 'debts'), (snapshot) => {
       const dbts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Debt));
       setDebts(dbts);
       setLoading(false);
-    });
+    }, handleError);
 
     return () => {
       unsubTxs();
