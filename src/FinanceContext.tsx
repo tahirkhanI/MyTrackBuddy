@@ -1,19 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Transaction, Budget, SavingsGoal, User } from './types';
+import { Transaction, Budget, SavingsGoal, User, Debt } from './types';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { 
   collection, 
-  query, 
-  where, 
   onSnapshot, 
   addDoc, 
   deleteDoc, 
   doc, 
-  setDoc, 
   updateDoc,
   increment,
-  getDocs
+  getDocs,
+  query,
+  where
 } from 'firebase/firestore';
 import { format, subMonths, parseISO } from 'date-fns';
 
@@ -22,6 +21,7 @@ interface FinanceContextType {
   transactions: Transaction[];
   budgets: Budget[];
   savings: SavingsGoal[];
+  debts: Debt[];
   loading: boolean;
   stats: any;
   chartData: any;
@@ -30,11 +30,14 @@ interface FinanceContextType {
   streak: number;
   badges: string[];
   // Actions
-  addTransaction: (tx: Omit<Transaction, 'id' | 'user_id'>) => Promise<void>;
+  addTransaction: (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
-  saveBudget: (budget: Omit<Budget, 'id' | 'user_id'>) => Promise<void>;
-  addSavingsGoal: (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount'>) => Promise<void>;
+  saveBudget: (budget: Omit<Budget, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
+  addSavingsGoal: (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount' | 'created_at'>) => Promise<void>;
   contributeToSavings: (id: string, amount: number) => Promise<void>;
+  addDebt: (debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'settled'>) => Promise<void>;
+  toggleDebtSettled: (id: string, settled: boolean) => Promise<void>;
+  deleteDebt: (id: string) => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -44,6 +47,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savings, setSavings] = useState<SavingsGoal[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,6 +57,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setTransactions([]);
         setBudgets([]);
         setSavings([]);
+        setDebts([]);
         setLoading(false);
       }
     });
@@ -65,23 +70,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setLoading(true);
 
-    // Real-time listeners for user data
-    const qTxs = query(collection(db, 'transactions'), where('user_id', '==', user.uid));
-    const unsubTxs = onSnapshot(qTxs, (snapshot) => {
+    // Real-time listeners for user data using nested paths
+    const unsubTxs = onSnapshot(collection(db, 'users', user.uid, 'transactions'), (snapshot) => {
       const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Transaction));
       setTransactions(txs);
     });
 
-    const qBudgets = query(collection(db, 'budgets'), where('user_id', '==', user.uid));
-    const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
+    const unsubBudgets = onSnapshot(collection(db, 'users', user.uid, 'budgets'), (snapshot) => {
       const bgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Budget));
       setBudgets(bgs);
     });
 
-    const qSavings = query(collection(db, 'savings'), where('user_id', '==', user.uid));
-    const unsubSavings = onSnapshot(qSavings, (snapshot) => {
+    const unsubSavings = onSnapshot(collection(db, 'users', user.uid, 'savings'), (snapshot) => {
       const svg = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as SavingsGoal));
       setSavings(svg);
+    });
+
+    const unsubDebts = onSnapshot(collection(db, 'users', user.uid, 'debts'), (snapshot) => {
+      const dbts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any as Debt));
+      setDebts(dbts);
       setLoading(false);
     });
 
@@ -89,13 +96,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       unsubTxs();
       unsubBudgets();
       unsubSavings();
+      unsubDebts();
     };
   }, [user]);
 
   // Actions
-  const addTransaction = async (tx: Omit<Transaction, 'id' | 'user_id'>) => {
+  const addTransaction = async (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return;
-    await addDoc(collection(db, 'transactions'), {
+    await addDoc(collection(db, 'users', user.uid, 'transactions'), {
       ...tx,
       user_id: user.uid,
       created_at: new Date().toISOString()
@@ -103,43 +111,67 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteTransaction = async (id: string) => {
-    await deleteDoc(doc(db, 'transactions', id));
+    if (!user) return;
+    await deleteDoc(doc(db, 'users', user.uid, 'transactions', id));
   };
 
-  const saveBudget = async (budget: Omit<Budget, 'id' | 'user_id'>) => {
+  const saveBudget = async (budget: Omit<Budget, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return;
-    // Check if budget for this month exists
     const q = query(
-      collection(db, 'budgets'), 
-      where('user_id', '==', user.uid), 
+      collection(db, 'users', user.uid, 'budgets'), 
       where('month', '==', budget.month)
     );
     const snapshot = await getDocs(q);
     
     if (!snapshot.empty) {
       const budgetId = snapshot.docs[0].id;
-      await updateDoc(doc(db, 'budgets', budgetId), { amount: budget.amount });
+      await updateDoc(doc(db, 'users', user.uid, 'budgets', budgetId), { amount: budget.amount });
     } else {
-      await addDoc(collection(db, 'budgets'), {
+      await addDoc(collection(db, 'users', user.uid, 'budgets'), {
         ...budget,
-        user_id: user.uid
+        user_id: user.uid,
+        created_at: new Date().toISOString()
       });
     }
   };
 
-  const addSavingsGoal = async (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount'>) => {
+  const addSavingsGoal = async (goal: Omit<SavingsGoal, 'id' | 'user_id' | 'current_amount' | 'created_at'>) => {
     if (!user) return;
-    await addDoc(collection(db, 'savings'), {
+    await addDoc(collection(db, 'users', user.uid, 'savings'), {
       ...goal,
       user_id: user.uid,
-      current_amount: 0
+      current_amount: 0,
+      created_at: new Date().toISOString()
     });
   };
 
   const contributeToSavings = async (id: string, amount: number) => {
-    await updateDoc(doc(db, 'savings', id), {
+    if (!user) return;
+    await updateDoc(doc(db, 'users', user.uid, 'savings', id), {
       current_amount: increment(amount)
     });
+  };
+
+  const addDebt = async (debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'settled'>) => {
+    if (!user) return;
+    await addDoc(collection(db, 'users', user.uid, 'debts'), {
+      ...debt,
+      user_id: user.uid,
+      settled: false,
+      created_at: new Date().toISOString()
+    });
+  };
+
+  const toggleDebtSettled = async (id: string, settled: boolean) => {
+    if (!user) return;
+    await updateDoc(doc(db, 'users', user.uid, 'debts', id), {
+      settled
+    });
+  };
+
+  const deleteDebt = async (id: string) => {
+    if (!user) return;
+    await deleteDoc(doc(db, 'users', user.uid, 'debts', id));
   };
 
   // Stats calculation (same as before)
@@ -247,6 +279,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       transactions, 
       budgets, 
       savings, 
+      debts,
       loading, 
       stats, 
       chartData, 
@@ -258,7 +291,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deleteTransaction,
       saveBudget,
       addSavingsGoal,
-      contributeToSavings
+      contributeToSavings,
+      addDebt,
+      toggleDebtSettled,
+      deleteDebt
     }}>
       {children}
     </FinanceContext.Provider>

@@ -1,12 +1,12 @@
 export interface User {
-  id: number;
+  id: string;
   name: string;
   email: string;
 }
 
 export interface Transaction {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   type: 'income' | 'expense';
   amount: number;
   category: string;
@@ -17,19 +17,30 @@ export interface Transaction {
 }
 
 export interface Budget {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   amount: number;
   month: string;
   created_at: string;
 }
 
 export interface SavingsGoal {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   target_amount: number;
   current_amount: number;
   deadline?: string;
+  created_at: string;
+}
+
+export interface Debt {
+  id: string;
+  user_id: string;
+  person: string;
+  amount: number;
+  type: 'lent' | 'borrowed';
+  date: string;
+  settled: boolean;
   created_at: string;
 }

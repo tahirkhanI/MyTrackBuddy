@@ -26,7 +26,10 @@ import {
   Flame,
   Activity,
   Zap,
-  Star
+  Star,
+  HandCoins,
+  CheckCircle2,
+  Circle
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -122,6 +125,7 @@ function AppContent() {
     transactions, 
     budgets, 
     savings, 
+    debts,
     healthScore, 
     streak, 
     badges,
@@ -129,12 +133,15 @@ function AppContent() {
     deleteTransaction,
     saveBudget,
     addSavingsGoal,
-    contributeToSavings
+    contributeToSavings,
+    addDebt,
+    toggleDebtSettled,
+    deleteDebt
   } = useFinance();
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'budgets' | 'savings'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'transactions' | 'budgets' | 'savings' | 'debts'>('dashboard');
   const [isAuthMode, setIsAuthMode] = useState<'login' | 'register'>('login');
   const [authError, setAuthError] = useState<string | null>(null);
-  const [modalType, setModalType] = useState<'transaction' | 'savings' | null>(null);
+  const [modalType, setModalType] = useState<'transaction' | 'savings' | 'debt' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -364,6 +371,13 @@ function AppContent() {
             onClick={() => setView('savings')} 
             icon={Target} 
             label="Savings Goals" 
+            collapsed={isSidebarCollapsed}
+          />
+          <NavItem 
+            active={view === 'debts'} 
+            onClick={() => setView('debts')} 
+            icon={HandCoins} 
+            label="Lent & Borrowed" 
             collapsed={isSidebarCollapsed}
           />
         </nav>
@@ -778,6 +792,15 @@ function AppContent() {
             </div>
           </div>
         )}
+
+        {view === 'debts' && (
+          <DebtsView 
+            debts={debts}
+            onAdd={() => setModalType('debt')}
+            onToggleSettled={toggleDebtSettled}
+            onDelete={deleteDebt}
+          />
+        )}
       </main>
 
       {/* Mobile Bottom Nav */}
@@ -793,7 +816,7 @@ function AppContent() {
           </button>
         </div>
         <BottomNavItem active={view === 'budgets'} onClick={() => setView('budgets')} icon={PieChartIcon} />
-        <BottomNavItem active={view === 'savings'} onClick={() => setView('savings')} icon={Target} />
+        <BottomNavItem active={view === 'debts'} onClick={() => setView('debts')} icon={HandCoins} />
       </nav>
 
       {/* Modals */}
@@ -821,7 +844,7 @@ function AppContent() {
               </button>
               
               <h3 className="text-xl font-bold mb-6">
-                {modalType === 'transaction' ? 'Add New Transaction' : 'Create Savings Goal'}
+                {modalType === 'transaction' ? 'Add New Transaction' : modalType === 'savings' ? 'Create Savings Goal' : 'Add Debt Record'}
               </h3>
               
               {modalType === 'transaction' ? (
@@ -831,12 +854,19 @@ function AppContent() {
                     setModalType(null);
                   }} 
                 />
-              ) : (
+              ) : modalType === 'savings' ? (
                 <SavingsGoalForm 
                   onSubmit={async (data: any) => {
                     await addSavingsGoal(data);
                     setModalType(null);
                   }} 
+                />
+              ) : (
+                <DebtForm 
+                  onSubmit={async (data: any) => {
+                    await addDebt(data);
+                    setModalType(null);
+                  }}
                 />
               )}
             </motion.div>
@@ -1114,13 +1144,21 @@ const AuthForm = ({ mode, onSubmit, onGoogleLogin, error }: any) => {
 };
 
 const TransactionForm = ({ onSubmit }: any) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof transactionSchema>>({
+  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<z.infer<typeof transactionSchema>>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
       date: format(new Date(), 'yyyy-MM-dd'),
       type: 'expense'
     }
   });
+
+  const type = watch('type');
+  const category = watch('category');
+  const paymentMethod = watch('payment_method');
+
+  const incomeCategories = ['Allowance', 'Salary', 'Freelance', 'Gift', 'Other'];
+  const expenseCategories = ['Food', 'Transport', 'Utilities', 'Entertainment', 'Rent', 'Education', 'Shopping', 'Other'];
+  const paymentMethods = ['Cash', 'Credit/Debit Card', 'UPI', 'Bank Transfer', 'Other'];
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -1138,25 +1176,76 @@ const TransactionForm = ({ onSubmit }: any) => {
           {errors.amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Amount is required</p>}
         </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Category</label>
-        <input {...register('category')} className="input-field h-12" placeholder="Food, Rent, Salary, etc." />
-        {errors.category && <p className="text-rose-500 text-xs mt-1.5 font-medium">Category is required</p>}
+      
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Category</label>
+          <select 
+            className="input-field h-12"
+            onChange={(e) => {
+              if (e.target.value !== 'custom') {
+                setValue('category', e.target.value);
+              } else {
+                setValue('category', '');
+              }
+            }}
+            value={type === 'income' ? (incomeCategories.includes(category) ? category : 'custom') : (expenseCategories.includes(category) ? category : 'custom')}
+          >
+            {(type === 'income' ? incomeCategories : expenseCategories).map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+            <option value="custom">Add Custom...</option>
+          </select>
+          {(type === 'income' ? !incomeCategories.includes(category) : !expenseCategories.includes(category)) && (
+            <input 
+              {...register('category')} 
+              className="input-field h-12 mt-2" 
+              placeholder="Enter custom category" 
+              autoFocus
+            />
+          )}
+          {errors.category && <p className="text-rose-500 text-xs mt-1.5 font-medium">Category is required</p>}
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Payment Method</label>
+          <select 
+            className="input-field h-12"
+            onChange={(e) => {
+              if (e.target.value !== 'custom') {
+                setValue('payment_method', e.target.value);
+              } else {
+                setValue('payment_method', '');
+              }
+            }}
+            value={paymentMethods.includes(paymentMethod || '') ? paymentMethod : 'custom'}
+          >
+            {paymentMethods.map(method => (
+              <option key={method} value={method}>{method}</option>
+            ))}
+            <option value="custom">Add Custom...</option>
+          </select>
+          {!paymentMethods.includes(paymentMethod || '') && (
+            <input 
+              {...register('payment_method')} 
+              className="input-field h-12 mt-2" 
+              placeholder="Enter custom method" 
+              autoFocus
+            />
+          )}
+        </div>
       </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Date</label>
           <input {...register('date')} type="date" className="input-field h-12" />
         </div>
         <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Payment Method</label>
-          <input {...register('payment_method')} className="input-field h-12" placeholder="Cash, Card, etc." />
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Notes (Optional)</label>
+          <input {...register('notes')} className="input-field h-12" placeholder="Add some details..." />
         </div>
       </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Notes (Optional)</label>
-        <textarea {...register('notes')} className="input-field h-24 resize-none" placeholder="Add some details..." />
-      </div>
+      
       <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
         {isSubmitting ? 'Saving...' : 'Add Transaction'}
       </button>
@@ -1215,5 +1304,137 @@ const SavingsGoalForm = ({ onSubmit }: any) => {
         {isSubmitting ? 'Saving...' : 'Create Goal'}
       </button>
     </form>
+  );
+};
+
+const debtSchema = z.object({
+  person: z.string().min(1),
+  amount: z.number().positive(),
+  type: z.enum(['lent', 'borrowed']),
+  date: z.string(),
+});
+
+const DebtForm = ({ onSubmit }: any) => {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof debtSchema>>({
+    resolver: zodResolver(debtSchema),
+    defaultValues: {
+      date: format(new Date(), 'yyyy-MM-dd'),
+      type: 'lent'
+    }
+  });
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Person's Name</label>
+        <input {...register('person')} className="input-field h-12" placeholder="e.g., Alex, Sarah" />
+        {errors.person && <p className="text-rose-500 text-xs mt-1.5 font-medium">Name is required</p>}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Type</label>
+          <select {...register('type')} className="input-field h-12">
+            <option value="lent">I Lent</option>
+            <option value="borrowed">I Borrowed</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Amount</label>
+          <input {...register('amount', { valueAsNumber: true })} type="number" step="0.01" className="input-field h-12" placeholder="0.00" />
+          {errors.amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Amount is required</p>}
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Date</label>
+        <input {...register('date')} type="date" className="input-field h-12" />
+      </div>
+      <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
+        {isSubmitting ? 'Saving...' : 'Add Record'}
+      </button>
+    </form>
+  );
+};
+
+const DebtsView = ({ debts, onAdd, onToggleSettled, onDelete }: any) => {
+  const lentTotal = debts.filter((d: any) => d.type === 'lent' && !d.settled).reduce((acc: number, d: any) => acc + d.amount, 0);
+  const borrowedTotal = debts.filter((d: any) => d.type === 'borrowed' && !d.settled).reduce((acc: number, d: any) => acc + d.amount, 0);
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <Card className="p-6 bg-emerald-50 border-emerald-100">
+          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Lent</p>
+          <h3 className="text-3xl font-bold text-emerald-700">${lentTotal.toLocaleString()}</h3>
+          <p className="text-[10px] text-emerald-600/60 font-medium mt-2">Money people owe you</p>
+        </Card>
+        <Card className="p-6 bg-rose-50 border-rose-100">
+          <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mb-1">Total Borrowed</p>
+          <h3 className="text-3xl font-bold text-rose-700">${borrowedTotal.toLocaleString()}</h3>
+          <p className="text-[10px] text-rose-600/60 font-medium mt-2">Money you owe others</p>
+        </Card>
+      </div>
+
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-bold">Debt Records</h3>
+        <button onClick={onAdd} className="btn-primary flex items-center gap-2 text-xs py-2 px-4">
+          <Plus className="w-4 h-4" /> Add Record
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {debts.map((debt: any) => (
+          <Card key={debt.id} className={cn("p-4 group", debt.settled && "opacity-60")}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={cn(
+                  "p-2.5 rounded-2xl",
+                  debt.type === 'lent' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                )}>
+                  <HandCoins className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm">{debt.person}</h4>
+                  <p className="text-[10px] text-zinc-500 font-medium">
+                    {debt.type === 'lent' ? 'You lent' : 'You borrowed'} on {format(parseISO(debt.date), 'MMM d, yyyy')}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className={cn(
+                  "font-bold text-lg",
+                  debt.type === 'lent' ? "text-emerald-600" : "text-rose-600"
+                )}>
+                  ${debt.amount.toLocaleString()}
+                </p>
+                <div className="flex items-center gap-2 justify-end mt-1">
+                  <button 
+                    onClick={() => onToggleSettled(debt.id, !debt.settled)}
+                    className={cn(
+                      "p-1 rounded-md transition-colors",
+                      debt.settled ? "text-emerald-600 bg-emerald-50" : "text-zinc-300 hover:text-emerald-600 hover:bg-emerald-50"
+                    )}
+                  >
+                    {debt.settled ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
+                  </button>
+                  <button 
+                    onClick={() => onDelete(debt.id)}
+                    className="p-1 text-zinc-300 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        ))}
+        {debts.length === 0 && (
+          <div className="md:col-span-2 text-center py-12 bg-zinc-50 rounded-3xl border-2 border-dashed border-zinc-200">
+            <HandCoins className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
+            <p className="text-zinc-500 font-medium">No debt records found.</p>
+            <button onClick={onAdd} className="text-zinc-900 font-bold mt-2 hover:underline">Add your first record</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
