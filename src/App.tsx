@@ -212,7 +212,7 @@ function AppContent() {
   const exportPDF = () => {
     const doc = new jsPDF() as any;
     doc.setFontSize(20);
-    doc.text('EduFinance Summary Report', 14, 22);
+    doc.text('0&1 Project Solutions - Financial Report', 14, 22);
     doc.setFontSize(12);
     doc.text(`Generated on: ${format(new Date(), 'PPP')}`, 14, 30);
     doc.text(`User: ${user?.displayName || user?.email}`, 14, 38);
@@ -221,20 +221,14 @@ function AppContent() {
       startY: 45,
       head: [['Metric', 'Value']],
       body: [
-        ['Total Income (Current Month)', `$${stats.income.toLocaleString()}`],
-        ['Total Expenses (Current Month)', `$${stats.expenses.toLocaleString()}`],
-        ['Net Balance', `$${stats.balance.toLocaleString()}`],
-        ['Budget Status', `${stats.currentBudget ? Math.round((stats.expenses / stats.currentBudget) * 100) : 0}% spent`],
+        ['Total Revenue', `₹${stats.totalRevenue.toLocaleString()}`],
+        ['Total Expenses', `₹${stats.totalExpenses.toLocaleString()}`],
+        ['Pending Dues', `₹${stats.pendingDues.toLocaleString()}`],
+        ['Net Balance', `₹${stats.balance.toLocaleString()}`],
       ],
     });
 
-    doc.autoTable({
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [['Date', 'Type', 'Category', 'Amount']],
-      body: transactions.slice(0, 20).map(t => [t.date, t.type, t.category, `$${t.amount}`]),
-    });
-
-    doc.save(`finance_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    doc.save(`erp_report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   if (loading) return (
@@ -294,9 +288,9 @@ function AppContent() {
             <Menu className="w-6 h-6" />
           </button>
           <div className="bg-zinc-900 p-1.5 rounded-lg">
-            <Wallet className="w-4 h-4 text-white" />
+            <Target className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-lg tracking-tight">EduFinance</span>
+          <span className="font-bold text-lg tracking-tight">0&1 ERP</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center font-bold text-xs">
@@ -325,11 +319,11 @@ function AppContent() {
         isSidebarCollapsed ? "lg:w-20" : "lg:w-64"
       )}>
         <div className="p-6 flex items-center justify-between">
-          <div className={cn("flex items-center gap-3 transition-opacity", isSidebarCollapsed && "lg:opacity-0")}>
+          <div className="flex items-center gap-3 transition-opacity">
             <div className="bg-zinc-900 p-2 rounded-lg">
-              <Wallet className="w-5 h-5 text-white" />
+              <Target className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-lg tracking-tight">EduFinance</span>
+            <span className="font-bold text-lg tracking-tight">0&1 ERP</span>
           </div>
           <button 
             onClick={() => isSidebarOpen ? setIsSidebarOpen(false) : setIsSidebarCollapsed(!isSidebarCollapsed)}

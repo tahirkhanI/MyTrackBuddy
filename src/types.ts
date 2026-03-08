@@ -26,7 +26,12 @@ export interface Project {
   submissionDate: string;
   status: 'Pending' | 'In Progress' | 'Completed';
   developmentFee: number;
+  makingFee: number;
+  codingFee: number;
+  threeDPrintingCost: number;
+  discount: number;
   totalPaid: number;
+  pendingNotes?: string;
   created_at: string;
 }
 

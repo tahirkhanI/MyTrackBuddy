@@ -31,6 +31,7 @@ interface ProjectContextType {
   updateComponent: (projectId: string, componentId: string, updates: Partial<Component>) => Promise<void>;
   deleteComponent: (projectId: string, componentId: string) => Promise<void>;
   getComponents: (projectId: string) => Promise<Component[]>;
+  subscribeToComponents: (projectId: string, callback: (components: Component[]) => void) => () => void;
   addPayment: (projectId: string, amount: number, notes?: string) => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -122,6 +123,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Component));
   };
 
+  const subscribeToComponents = (projectId: string, callback: (components: Component[]) => void) => {
+    if (!user) return () => {};
+    return onSnapshot(collection(db, 'users', user.uid, 'projects', projectId, 'components'), (snapshot) => {
+      const components = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Component));
+      callback(components);
+    });
+  };
+
   const addTransaction = async (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => {
     if (!user) return;
     await addDoc(collection(db, 'users', user.uid, 'transactions'), {
@@ -157,18 +166,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const totalRevenue = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
     const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
     
-    const totalFees = projects.reduce((acc, p) => acc + p.developmentFee, 0);
-    const totalPaid = projects.reduce((acc, p) => acc + p.totalPaid, 0);
-    
-    // Note: Global component cost is hard to calculate without fetching all subcollections.
-    // For now, we'll use totalFees - totalPaid as a baseline for pending dues.
-    const pendingDues = totalFees - totalPaid;
+    const pendingDues = projects.reduce((acc, p) => {
+      const totalFee = (p.developmentFee || 0) + (p.makingFee || 0) + (p.codingFee || 0) + (p.threeDPrintingCost || 0) - (p.discount || 0);
+      return acc + (totalFee - p.totalPaid);
+    }, 0);
     
     return {
       totalRevenue,
       totalExpenses,
-      totalFees,
-      totalPaid,
       pendingDues,
       balance: totalRevenue - totalExpenses,
       activeProjects: projects.filter(p => p.status !== 'Completed').length,
@@ -190,6 +195,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updateComponent,
       deleteComponent,
       getComponents,
+      subscribeToComponents,
       addPayment,
       addTransaction,
       deleteTransaction

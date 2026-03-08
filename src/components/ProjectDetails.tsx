@@ -17,10 +17,14 @@ import {
   Clock,
   Share2,
   Copy,
-  Check
+  Check,
+  FileText,
+  AlertTriangle
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 
 interface ProjectDetailsProps {
   project: Project;
@@ -30,10 +34,11 @@ interface ProjectDetailsProps {
 export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose }) => {
   const { 
     updateProject, 
+    deleteProject,
     addComponent, 
     updateComponent, 
     deleteComponent, 
-    getComponents,
+    subscribeToComponents,
     addPayment,
     transactions
   } = useProject();
@@ -45,17 +50,16 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
   const [showAddComponent, setShowAddComponent] = useState(false);
   const [newComponent, setNewComponent] = useState({ name: '', cost: '' });
   const [copied, setCopied] = useState(false);
+  const [threeDPrintingCost, setThreeDPrintingCost] = useState(project.threeDPrintingCost?.toString() || '0');
+  const [pendingNotes, setPendingNotes] = useState(project.pendingNotes || '');
 
   useEffect(() => {
-    loadComponents();
+    const unsubscribe = subscribeToComponents(project.id, (data) => {
+      setComponents(data);
+      setLoadingComponents(false);
+    });
+    return () => unsubscribe();
   }, [project.id]);
-
-  const loadComponents = async () => {
-    setLoadingComponents(true);
-    const data = await getComponents(project.id);
-    setComponents(data);
-    setLoadingComponents(false);
-  };
 
   const handleAddPayment = async () => {
     const amount = parseFloat(paymentAmount);
@@ -75,7 +79,6 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
     });
     setNewComponent({ name: '', cost: '' });
     setShowAddComponent(false);
-    loadComponents();
   };
 
   const toggleComponentStatus = async (comp: Component) => {
@@ -84,41 +87,125 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
       comp.status === 'Ordered' ? 'Available' : 'Needed';
     
     await updateComponent(project.id, comp.id, { status: nextStatus });
-    loadComponents();
   };
 
-  const generateQuotation = () => {
+  const handleDeleteProject = async () => {
+    if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      await deleteProject(project.id);
+      onClose();
+    }
+  };
+
+  const handleUpdateThreeDPrintingCost = async () => {
+    const cost = parseFloat(threeDPrintingCost);
+    if (!isNaN(cost)) {
+      await updateProject(project.id, { threeDPrintingCost: cost });
+    }
+  };
+
+  const handleUpdatePendingNotes = async () => {
+    await updateProject(project.id, { pendingNotes });
+  };
+
+  const generateInvoice = () => {
+    const doc = new jsPDF() as any;
     const hardwareCost = components.reduce((acc, c) => acc + c.estimatedCost, 0);
-    const grandTotal = hardwareCost + project.developmentFee;
-    const advance = grandTotal * 0.5;
+    const threeDPrinting = project.threeDPrintingCost || 0;
+    const making = project.makingFee || 0;
+    const coding = project.codingFee || 0;
+    const discount = project.discount || 0;
+    const grandTotal = hardwareCost + threeDPrinting + making + coding - discount;
+    const pendingAmount = grandTotal - project.totalPaid;
 
-    const componentList = components.map(c => `- ${c.componentName}: ₹${c.estimatedCost.toLocaleString()}`).join('\n');
+    // Header - Blue Banner
+    doc.setFillColor(0, 0, 255); // Deep Blue
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('0&1 Project Solutions', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Invoice #: INV-${project.id.slice(0, 6).toUpperCase()}`, 105, 30, { align: 'center' });
+    doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 105, 35, { align: 'center' });
 
-    const template = `Hello ${project.studentName}, here is the estimate for your ${project.projectName} project.
+    // Client Info
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(12);
+    doc.text('Bill To:', 20, 55);
+    doc.setFont('helvetica', 'bold');
+    doc.text(project.studentName, 20, 62);
+    doc.setFont('helvetica', 'normal');
+    doc.text(project.university, 20, 68);
+    doc.text(`Project: ${project.projectName}`, 20, 74);
 
-${componentList}
+    // Line Items Table
+    const tableData = [
+      ['Materials', `₹${hardwareCost.toLocaleString()}`],
+      ['3D Print', `₹${threeDPrinting.toLocaleString()}`],
+      ['Making', `₹${making.toLocaleString()}`],
+      ['Coding', `₹${coding.toLocaleString()}`],
+      ['Discount', `-₹${discount.toLocaleString()}`]
+    ];
 
-Hardware Cost: ₹${hardwareCost.toLocaleString()}
-Development Fee: ₹${project.developmentFee.toLocaleString()}
-Total Project Cost: ₹${grandTotal.toLocaleString()}
+    doc.autoTable({
+      startY: 85,
+      head: [['Description', 'Amount']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 0, 255], textColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 5 },
+      columnStyles: { 1: { halign: 'right' } }
+    });
 
-Please provide a 50% advance of ₹${advance.toLocaleString()} to begin component ordering.`;
+    // Totals Box
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setDrawColor(0, 0, 0);
+    doc.rect(120, finalY, 70, 30);
+    
+    doc.setFontSize(10);
+    doc.text('Grand Total:', 125, finalY + 8);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`₹${grandTotal.toLocaleString()}`, 185, finalY + 8, { align: 'right' });
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text('Paid:', 125, finalY + 16);
+    doc.text(`₹${project.totalPaid.toLocaleString()}`, 185, finalY + 16, { align: 'right' });
+    
+    doc.setFontSize(12);
+    doc.setTextColor(255, 0, 0);
+    doc.text('Pending:', 125, finalY + 25);
+    doc.text(`₹${pendingAmount.toLocaleString()}`, 185, finalY + 25, { align: 'right' });
 
-    navigator.clipboard.writeText(template);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // Footer
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bank Details:', 20, 250);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Gpay or Phonepe - 7093617528', 20, 256);
+    doc.text('Address: Poonamallee, Chennai, Tamil Nadu, 600124', 20, 262);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Thank you for choosing 0&1 Project Solutions!', 105, 280, { align: 'center' });
+
+    doc.save(`Invoice_${project.projectName.replace(/\s+/g, '_')}.pdf`);
   };
 
   const hardwareCost = components.reduce((acc, c) => acc + c.estimatedCost, 0);
-  const totalCost = hardwareCost + project.developmentFee;
+  const estimatedProfit = project.developmentFee - hardwareCost - (project.threeDPrintingCost || 0);
+  const totalCost = hardwareCost + (project.threeDPrintingCost || 0) + project.developmentFee - (project.discount || 0);
   const balance = totalCost - project.totalPaid;
   const daysLeft = differenceInDays(parseISO(project.submissionDate), new Date());
-  const progress = Math.min(100, Math.max(0, 100 - (daysLeft / 30) * 100)); // Assuming 30 days project cycle for visual
+  const progress = Math.min(100, Math.max(0, 100 - (daysLeft / 30) * 100));
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-zinc-50 lg:relative lg:inset-auto lg:h-full lg:rounded-3xl lg:border lg:border-zinc-200 lg:shadow-xl overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-zinc-200 p-4 lg:p-6 flex items-center justify-between sticky top-0 z-10">
+      <div className="bg-white border-b border-zinc-200 p-4 lg:p-6 flex flex-col sm:flex-row sm:items-center justify-between sticky top-0 z-10 gap-4">
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-xl lg:hidden">
             <ChevronLeft className="w-6 h-6" />
@@ -128,7 +215,7 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
             <p className="text-sm text-zinc-500">{project.studentName} • {project.university}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select 
             value={project.status}
             onChange={(e) => updateProject(project.id, { status: e.target.value as any })}
@@ -139,16 +226,65 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
             <option value="Completed">Completed</option>
           </select>
           <button 
-            onClick={generateQuotation}
-            className="btn-primary flex items-center gap-2 text-sm py-2 px-4"
+            onClick={generateInvoice}
+            className="btn-primary flex items-center gap-2 text-sm py-2 px-4 bg-blue-600 hover:bg-blue-700"
           >
-            {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-            {copied ? 'Copied!' : 'Generate Estimate'}
+            <FileText className="w-4 h-4" />
+            Generate Invoice
+          </button>
+          <button 
+            onClick={handleDeleteProject}
+            className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+            title="Delete Project"
+          >
+            <Trash2 className="w-5 h-5" />
           </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8">
+        {/* Profit Metric */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+           <Card className="p-4 bg-indigo-600 text-white border-none">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200 mb-1">Estimated Profit</p>
+              <p className="text-2xl font-bold">₹{estimatedProfit.toLocaleString()}</p>
+           </Card>
+           <Card className="p-4 bg-zinc-900 text-white border-none">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Total Fee</p>
+              <p className="text-xl font-bold">₹{project.developmentFee.toLocaleString()}</p>
+           </Card>
+           <Card className="p-4 bg-white border-zinc-200">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">3D Print Cost</p>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-bold">₹</span>
+                <input 
+                  type="number"
+                  value={threeDPrintingCost}
+                  onChange={(e) => setThreeDPrintingCost(e.target.value)}
+                  onBlur={handleUpdateThreeDPrintingCost}
+                  className="w-full bg-transparent border-none p-0 focus:ring-0 text-xl font-bold"
+                />
+              </div>
+           </Card>
+        </div>
+
+        {/* Pending Notes */}
+        {project.status === 'Pending' && (
+          <Card className="p-4 bg-amber-50 border-amber-100">
+            <div className="flex items-center gap-2 mb-3 text-amber-700">
+              <AlertTriangle className="w-4 h-4" />
+              <h4 className="text-sm font-bold uppercase tracking-wider">Pending Notes</h4>
+            </div>
+            <textarea 
+              value={pendingNotes}
+              onChange={(e) => setPendingNotes(e.target.value)}
+              onBlur={handleUpdatePendingNotes}
+              placeholder="What exactly is pending? (e.g. Waiting on sensor delivery)"
+              className="w-full bg-white/50 border-amber-200 rounded-xl p-3 text-sm focus:ring-amber-500 focus:border-amber-500 min-h-[80px]"
+            />
+          </Card>
+        )}
+
         {/* Progress Section */}
         <section>
           <div className="flex justify-between items-end mb-2">
@@ -183,24 +319,24 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Card className="p-4 bg-zinc-900 text-white border-none">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Total Cost</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Total Project Cost</p>
                 <p className="text-xl font-bold">₹{totalCost.toLocaleString()}</p>
               </Card>
               <Card className="p-4 bg-emerald-50 border-emerald-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Paid</p>
                 <p className="text-xl font-bold text-emerald-700">₹{project.totalPaid.toLocaleString()}</p>
               </Card>
-              <Card className="p-4 bg-rose-50 border-rose-100 col-span-2">
+              <Card className="p-4 bg-rose-50 border-rose-100 sm:col-span-2">
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-rose-600 mb-1">Remaining Balance</p>
                     <p className="text-2xl font-bold text-rose-700">₹{balance.toLocaleString()}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Dev Fee</p>
-                    <p className="text-sm font-bold text-zinc-600">₹{project.developmentFee.toLocaleString()}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Hardware Cost</p>
+                    <p className="text-sm font-bold text-zinc-600">₹{hardwareCost.toLocaleString()}</p>
                   </div>
                 </div>
               </Card>
@@ -215,7 +351,7 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
                   className="overflow-hidden"
                 >
                   <Card className="p-4 bg-zinc-50 border-zinc-200">
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input 
                         type="number" 
                         value={paymentAmount}
@@ -223,8 +359,10 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
                         placeholder="Amount"
                         className="input-field flex-1"
                       />
-                      <button onClick={handleAddPayment} className="btn-primary px-4">Add</button>
-                      <button onClick={() => setShowAddPayment(false)} className="btn-secondary px-4">Cancel</button>
+                      <div className="flex gap-2">
+                        <button onClick={handleAddPayment} className="btn-primary flex-1 sm:flex-none px-4">Add</button>
+                        <button onClick={() => setShowAddPayment(false)} className="btn-secondary flex-1 sm:flex-none px-4">Cancel</button>
+                      </div>
                     </div>
                   </Card>
                 </motion.div>
@@ -269,7 +407,7 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
                       </div>
                     </div>
                     <button 
-                      onClick={() => deleteComponent(project.id, comp.id).then(loadComponents)}
+                      onClick={() => deleteComponent(project.id, comp.id)}
                       className="p-2 text-zinc-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-all"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -299,7 +437,7 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
                       placeholder="Component Name (e.g. ESP32)"
                       className="input-field w-full"
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input 
                         type="number"
                         value={newComponent.cost}
@@ -307,8 +445,10 @@ Please provide a 50% advance of ₹${advance.toLocaleString()} to begin componen
                         placeholder="Estimated Cost"
                         className="input-field flex-1"
                       />
-                      <button onClick={handleAddComponent} className="btn-primary px-4">Add</button>
-                      <button onClick={() => setShowAddComponent(false)} className="btn-secondary px-4">Cancel</button>
+                      <div className="flex gap-2">
+                        <button onClick={handleAddComponent} className="btn-primary flex-1 sm:flex-none px-4">Add</button>
+                        <button onClick={() => setShowAddComponent(false)} className="btn-secondary flex-1 sm:flex-none px-4">Cancel</button>
+                      </div>
                     </div>
                   </Card>
                 </motion.div>
