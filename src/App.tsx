@@ -29,7 +29,8 @@ import {
   Star,
   HandCoins,
   CheckCircle2,
-  Circle
+  Circle,
+  ShoppingCart
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -72,6 +73,7 @@ import { ProjectBoard } from './components/ProjectBoard';
 import { ProjectDetails } from './components/ProjectDetails';
 import { ProjectForm } from './components/ProjectForm';
 import { Project, Component } from './types';
+import { ShoppingList } from './ShoppingList';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -132,7 +134,7 @@ function AppContent() {
     addPayment,
     deleteTransaction
   } = useProject();
-  const [view, setView] = useState<'dashboard' | 'projects' | 'transactions'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'projects' | 'transactions' | 'shopping'>('dashboard');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isAuthMode, setIsAuthMode] = useState<'login' | 'register'>('login');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -364,6 +366,13 @@ function AppContent() {
             label="Finance Ledger" 
             collapsed={isSidebarCollapsed}
           />
+          <NavItem 
+            active={view === 'shopping'} 
+            onClick={() => setView('shopping')} 
+            icon={ShoppingCart} 
+            label="Shopping List" 
+            collapsed={isSidebarCollapsed}
+          />
         </nav>
 
         <div className="p-4 border-t border-zinc-200">
@@ -575,6 +584,10 @@ function AppContent() {
             }}
           />
         )}
+
+        {view === 'shopping' && (
+          <ShoppingList />
+        )}
       </main>
 
       {/* Mobile Bottom Nav */}
@@ -589,6 +602,7 @@ function AppContent() {
             <Plus className="w-6 h-6" />
           </button>
         </div>
+        <BottomNavItem active={view === 'shopping'} onClick={() => setView('shopping')} icon={ShoppingCart} />
         <BottomNavItem active={view === 'transactions'} onClick={() => setView('transactions')} icon={Receipt} />
       </nav>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Project, Component, Transaction } from '../types';
 import { useProject } from '../ProjectContext';
 import { Card } from './UI';
@@ -19,7 +19,9 @@ import {
   Copy,
   Check,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  History,
+  ArrowUpRight
 } from 'lucide-react';
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
@@ -45,6 +47,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
 
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [showAddComponent, setShowAddComponent] = useState(false);
   const [newComponent, setNewComponent] = useState({ name: '', cost: '' });
   const [copied, setCopied] = useState(false);
@@ -54,6 +57,10 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
 
   const components = project.components || [];
 
+  const projectTransactions = useMemo(() => {
+    return transactions.filter(t => t.linkedProjectId === project.id);
+  }, [transactions, project.id]);
+
   useEffect(() => {
     setThreeDPrintingCost(project.threeDPrintingCost?.toString() || '0');
     setDevelopmentFee(project.developmentFee?.toString() || '0');
@@ -62,9 +69,10 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
 
   const handleAddPayment = async () => {
     const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) return;
-    await addPayment(project.id, amount);
+    if (isNaN(amount) || amount <= 0 || !paymentDate) return;
+    await addPayment(project.id, amount, paymentDate);
     setPaymentAmount('');
+    setPaymentDate(new Date().toISOString().split('T')[0]);
     setShowAddPayment(false);
   };
 
@@ -90,8 +98,13 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
 
   const handleDeleteProject = async () => {
     if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      await deleteProject(project.id);
-      onClose();
+      try {
+        await deleteProject(project.id);
+        onClose();
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      }
     }
   };
 
@@ -356,17 +369,39 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
                   className="overflow-hidden"
                 >
                   <Card className="p-4 bg-zinc-50 border-zinc-200">
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input 
-                        type="number" 
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(e.target.value)}
-                        placeholder="Amount"
-                        className="input-field flex-1"
-                      />
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Amount (₹)</label>
+                        <input 
+                          type="number" 
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          placeholder="Enter amount"
+                          className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Payment Date</label>
+                        <input 
+                          type="date" 
+                          value={paymentDate}
+                          onChange={(e) => setPaymentDate(e.target.value)}
+                          className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                        />
+                      </div>
                       <div className="flex gap-2">
-                        <button onClick={handleAddPayment} className="btn-primary flex-1 sm:flex-none px-4">Add</button>
-                        <button onClick={() => setShowAddPayment(false)} className="btn-secondary flex-1 sm:flex-none px-4">Cancel</button>
+                        <button 
+                          onClick={handleAddPayment}
+                          className="flex-1 bg-zinc-900 text-white rounded-lg px-3 py-2 text-sm font-bold hover:bg-zinc-800 transition-colors"
+                        >
+                          Confirm Payment
+                        </button>
+                        <button 
+                          onClick={() => setShowAddPayment(false)}
+                          className="flex-1 bg-zinc-100 text-zinc-600 rounded-lg px-3 py-2 text-sm font-bold hover:bg-zinc-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   </Card>
@@ -375,7 +410,38 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
             </AnimatePresence>
           </section>
 
-          {/* Component Tracker */}
+          <section className="space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Payment History
+            </h3>
+            <Card className="p-0 overflow-hidden">
+              <div className="divide-y divide-zinc-100">
+                {projectTransactions.map((tx) => (
+                  <div key={tx.id} className="flex items-center justify-between p-4 hover:bg-zinc-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center">
+                        <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-zinc-900">₹{tx.amount.toLocaleString()}</p>
+                        <p className="text-xs text-zinc-500">{format(parseISO(tx.date), 'dd MMM yyyy')}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Paid</span>
+                    </div>
+                  </div>
+                ))}
+                {projectTransactions.length === 0 && (
+                  <div className="p-8 text-center text-zinc-400">
+                    <p className="text-sm font-medium">No payments logged yet.</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </section>
+
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold flex items-center gap-2">

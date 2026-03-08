@@ -32,7 +32,7 @@ interface ProjectContextType {
   deleteComponent: (projectId: string, componentId: string) => Promise<void>;
   getComponents: (projectId: string) => Promise<Component[]>;
   subscribeToComponents: (projectId: string, callback: (components: Component[]) => void) => () => void;
-  addPayment: (projectId: string, amount: number, notes?: string) => Promise<void>;
+  addPayment: (projectId: string, amount: number, date: string, notes?: string) => Promise<void>;
   addTransaction: (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
 }
@@ -187,14 +187,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await deleteDoc(doc(db, 'users', user.uid, 'transactions', id));
   };
 
-  const addPayment = async (projectId: string, amount: number, notes?: string) => {
+  const addPayment = async (projectId: string, amount: number, date: string, notes?: string) => {
     if (!user) return;
     // 1. Add transaction
     await addTransaction({
       type: 'income',
       amount,
       category: 'Project Payment',
-      date: new Date().toISOString().split('T')[0],
+      date,
       linkedProjectId: projectId,
       notes: notes || `Payment for project ${projectId}`
     });
