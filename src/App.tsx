@@ -438,9 +438,9 @@ function AppContent() {
                 <h2 className="text-xl text-zinc-400 mb-1">Hardware Developer Console</h2>
                 <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-12">
                   <div>
-                    <p className="text-sm text-zinc-400 mb-1">Total Revenue</p>
+                    <p className="text-sm text-zinc-400 mb-1">Total Project Value</p>
                     <h3 className="text-5xl font-bold tracking-tight">
-                      ₹{stats.totalRevenue.toLocaleString()}
+                      ₹{stats.totalProjectValue.toLocaleString()}
                     </h3>
                   </div>
                   <div className="flex gap-8">
@@ -460,11 +460,11 @@ function AppContent() {
             {/* Insights Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <StatCard 
-                title="Total Revenue" 
+                title="Actual Revenue" 
                 value={`₹${stats.totalRevenue.toLocaleString()}`} 
                 icon={TrendingUp} 
                 color="bg-emerald-50 text-emerald-600"
-                message="Total earnings from all projects"
+                message="Total payments received"
               />
               <StatCard 
                 title="Pending Dues" 
@@ -474,18 +474,18 @@ function AppContent() {
                 message="Fees yet to be collected"
               />
               <StatCard 
-                title="Component Expenses" 
-                value={`₹${stats.totalExpenses.toLocaleString()}`} 
+                title="Component Costs" 
+                value={`₹${stats.totalComponentCosts.toLocaleString()}`} 
                 icon={ArrowDownCircle} 
                 color="bg-rose-50 text-rose-600"
-                message="Hardware & component costs"
+                message="Hardware & component expenses"
               />
               <StatCard 
-                title="Estimated Profit" 
+                title="Total Potential Profit" 
                 value={`₹${stats.estimatedTotalProfit.toLocaleString()}`} 
                 icon={TrendingUp} 
                 color="bg-indigo-50 text-indigo-600"
-                message="Potential profit after all costs"
+                message="Profit after all hardware costs"
               />
             </div>
 
@@ -521,6 +521,9 @@ function AppContent() {
                 <div className="space-y-6">
                   {projects.slice(0, 4).map(project => {
                     const statusColor = project.status === 'Completed' ? 'bg-emerald-500' : project.status === 'In Progress' ? 'bg-indigo-500' : 'bg-amber-500';
+                    const componentCosts = (project.components || []).reduce((sum, c) => sum + (c.actualCost || c.estimatedCost || 0), 0);
+                    const projectProfit = project.developmentFee - componentCosts;
+                    
                     return (
                       <div key={project.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-zinc-50 transition-colors cursor-pointer" onClick={() => { setSelectedProject(project); setView('projects'); }}>
                         <div className="flex items-center gap-3">
@@ -531,8 +534,8 @@ function AppContent() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold">₹{project.developmentFee.toLocaleString()}</p>
-                          <p className="text-[10px] text-zinc-400 font-bold">Fee</p>
+                          <p className="text-sm font-bold text-emerald-600">₹{projectProfit.toLocaleString()}</p>
+                          <p className="text-[10px] text-zinc-400 font-bold uppercase">Profit</p>
                         </div>
                       </div>
                     );

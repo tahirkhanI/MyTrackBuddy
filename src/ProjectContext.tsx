@@ -213,14 +213,26 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return acc + (totalFee - p.totalPaid);
     }, 0);
     
-    const totalPotentialRevenue = projects.reduce((acc, p) => acc + (p.developmentFee || 0), 0);
+    // Total Project Value (Sum of all development fees)
+    const totalProjectValue = projects.reduce((acc, p) => acc + (p.developmentFee || 0), 0);
+    
+    // Calculate total component costs per project to get true profit
+    const totalComponentCosts = projects.reduce((acc, p) => {
+      const projectComponentCosts = (p.components || []).reduce((sum, c) => sum + (c.actualCost || c.estimatedCost || 0), 0);
+      return acc + projectComponentCosts;
+    }, 0);
+
+    // Total Potential Profit = Total Project Value - Total Component Costs
+    const totalPotentialProfit = totalProjectValue - totalComponentCosts;
     
     return {
-      totalRevenue,
-      totalExpenses,
+      totalRevenue, // Actual money received
+      totalExpenses, // Actual money spent (from transactions)
+      totalProjectValue, // Total value of all contracts
+      totalComponentCosts,
       pendingDues,
       balance: totalRevenue - totalExpenses,
-      estimatedTotalProfit: totalPotentialRevenue - totalExpenses,
+      estimatedTotalProfit: totalPotentialProfit,
       activeProjects: projects.filter(p => p.status !== 'Completed').length,
       completedProjects: projects.filter(p => p.status === 'Completed').length
     };
