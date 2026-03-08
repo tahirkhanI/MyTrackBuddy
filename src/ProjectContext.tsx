@@ -167,15 +167,18 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
     
     const pendingDues = projects.reduce((acc, p) => {
-      const totalFee = (p.developmentFee || 0) + (p.makingFee || 0) + (p.codingFee || 0) + (p.threeDPrintingCost || 0) - (p.discount || 0);
+      const totalFee = p.developmentFee || 0;
       return acc + (totalFee - p.totalPaid);
     }, 0);
+    
+    const totalPotentialRevenue = projects.reduce((acc, p) => acc + (p.developmentFee || 0), 0);
     
     return {
       totalRevenue,
       totalExpenses,
       pendingDues,
       balance: totalRevenue - totalExpenses,
+      estimatedTotalProfit: totalPotentialRevenue - totalExpenses,
       activeProjects: projects.filter(p => p.status !== 'Completed').length,
       completedProjects: projects.filter(p => p.status === 'Completed').length
     };

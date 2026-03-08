@@ -440,7 +440,7 @@ function AppContent() {
             </Card>
 
             {/* Insights Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <StatCard 
                 title="Total Revenue" 
                 value={`₹${stats.totalRevenue.toLocaleString()}`} 
@@ -461,6 +461,13 @@ function AppContent() {
                 icon={ArrowDownCircle} 
                 color="bg-rose-50 text-rose-600"
                 message="Hardware & component costs"
+              />
+              <StatCard 
+                title="Estimated Profit" 
+                value={`₹${stats.estimatedTotalProfit.toLocaleString()}`} 
+                icon={TrendingUp} 
+                color="bg-indigo-50 text-indigo-600"
+                message="Potential profit after all costs"
               />
             </div>
 

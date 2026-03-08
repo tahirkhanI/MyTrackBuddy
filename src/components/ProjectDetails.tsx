@@ -51,6 +51,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
   const [newComponent, setNewComponent] = useState({ name: '', cost: '' });
   const [copied, setCopied] = useState(false);
   const [threeDPrintingCost, setThreeDPrintingCost] = useState(project.threeDPrintingCost?.toString() || '0');
+  const [developmentFee, setDevelopmentFee] = useState(project.developmentFee?.toString() || '0');
   const [pendingNotes, setPendingNotes] = useState(project.pendingNotes || '');
 
   useEffect(() => {
@@ -103,102 +104,99 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
     }
   };
 
+  const handleUpdateDevelopmentFee = async () => {
+    const fee = parseFloat(developmentFee);
+    if (!isNaN(fee)) {
+      await updateProject(project.id, { developmentFee: fee });
+    }
+  };
+
   const handleUpdatePendingNotes = async () => {
     await updateProject(project.id, { pendingNotes });
   };
 
   const generateInvoice = () => {
-    const doc = new jsPDF() as any;
-    const hardwareCost = components.reduce((acc, c) => acc + c.estimatedCost, 0);
-    const threeDPrinting = project.threeDPrintingCost || 0;
-    const making = project.makingFee || 0;
-    const coding = project.codingFee || 0;
-    const discount = project.discount || 0;
-    const grandTotal = hardwareCost + threeDPrinting + making + coding - discount;
-    const pendingAmount = grandTotal - project.totalPaid;
+    try {
+      const doc = new jsPDF() as any;
+      const totalProjectCost = project.developmentFee;
+      const amountPaid = project.totalPaid;
+      const pendingAmount = totalProjectCost - amountPaid;
 
-    // Header - Blue Banner
-    doc.setFillColor(0, 0, 255); // Deep Blue
-    doc.rect(0, 0, 210, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(24);
-    doc.setFont('helvetica', 'bold');
-    doc.text('0&1 Project Solutions', 105, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Invoice #: INV-${project.id.slice(0, 6).toUpperCase()}`, 105, 30, { align: 'center' });
-    doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 105, 35, { align: 'center' });
+      // Header - Blue Banner
+      doc.setFillColor(0, 0, 255); // Deep Blue
+      doc.rect(0, 0, 210, 40, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.text('0&1 Project Solutions', 105, 20, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Invoice #: INV-${project.id.slice(0, 6).toUpperCase()}`, 105, 30, { align: 'center' });
+      doc.text(`Date: ${format(new Date(), 'dd/MM/yyyy')}`, 105, 35, { align: 'center' });
 
-    // Client Info
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.text('Bill To:', 20, 55);
-    doc.setFont('helvetica', 'bold');
-    doc.text(project.studentName, 20, 62);
-    doc.setFont('helvetica', 'normal');
-    doc.text(project.university, 20, 68);
-    doc.text(`Project: ${project.projectName}`, 20, 74);
+      // Client Info
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      doc.text('Bill To:', 20, 55);
+      doc.setFont('helvetica', 'bold');
+      doc.text(project.studentName, 20, 62);
+      doc.setFont('helvetica', 'normal');
+      doc.text(project.university, 20, 68);
+      doc.text(`Project: ${project.projectName}`, 20, 74);
 
-    // Line Items Table
-    const tableData = [
-      ['Materials', `₹${hardwareCost.toLocaleString()}`],
-      ['3D Print', `₹${threeDPrinting.toLocaleString()}`],
-      ['Making', `₹${making.toLocaleString()}`],
-      ['Coding', `₹${coding.toLocaleString()}`],
-      ['Discount', `-₹${discount.toLocaleString()}`]
-    ];
+      // Line Items Table
+      const tableData = [
+        ['Total Project Cost (Development Fee)', `₹${totalProjectCost.toLocaleString()}`],
+        ['Amount Paid', `₹${amountPaid.toLocaleString()}`]
+      ];
 
-    doc.autoTable({
-      startY: 85,
-      head: [['Description', 'Amount']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [0, 0, 255], textColor: [255, 255, 255] },
-      styles: { fontSize: 10, cellPadding: 5 },
-      columnStyles: { 1: { halign: 'right' } }
-    });
+      doc.autoTable({
+        startY: 85,
+        head: [['Description', 'Amount']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [0, 0, 255], textColor: [255, 255, 255] },
+        styles: { fontSize: 10, cellPadding: 5 },
+        columnStyles: { 1: { halign: 'right' } }
+      });
 
-    // Totals Box
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
-    doc.setDrawColor(0, 0, 0);
-    doc.rect(120, finalY, 70, 30);
-    
-    doc.setFontSize(10);
-    doc.text('Grand Total:', 125, finalY + 8);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`₹${grandTotal.toLocaleString()}`, 185, finalY + 8, { align: 'right' });
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text('Paid:', 125, finalY + 16);
-    doc.text(`₹${project.totalPaid.toLocaleString()}`, 185, finalY + 16, { align: 'right' });
-    
-    doc.setFontSize(12);
-    doc.setTextColor(255, 0, 0);
-    doc.text('Pending:', 125, finalY + 25);
-    doc.text(`₹${pendingAmount.toLocaleString()}`, 185, finalY + 25, { align: 'right' });
+      // Totals Box - Prominent Bordered Box
+      const finalY = (doc as any).lastAutoTable.finalY + 15;
+      doc.setDrawColor(0, 0, 255);
+      doc.setLineWidth(0.5);
+      doc.rect(110, finalY, 80, 20);
+      
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total Pending Amount:', 115, finalY + 12);
+      doc.text(`₹${pendingAmount.toLocaleString()}`, 185, finalY + 12, { align: 'right' });
 
-    // Footer
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Bank Details:', 20, 250);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Gpay or Phonepe - 7093617528', 20, 256);
-    doc.text('Address: Poonamallee, Chennai, Tamil Nadu, 600124', 20, 262);
-    
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text('Thank you for choosing 0&1 Project Solutions!', 105, 280, { align: 'center' });
+      // Footer
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bank Details:', 20, 250);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Gpay or Phonepe - 7093617528', 20, 256);
+      doc.text('Address: Poonamallee, Chennai, Tamil Nadu, 600124', 20, 262);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text('Thank you for choosing 0&1 Project Solutions!', 105, 280, { align: 'center' });
 
-    doc.save(`Invoice_${project.projectName.replace(/\s+/g, '_')}.pdf`);
+      doc.save(`Invoice_${project.projectName.replace(/\s+/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Error generating invoice:', error);
+      alert('Failed to generate invoice. Please try again.');
+    }
   };
 
   const hardwareCost = components.reduce((acc, c) => acc + c.estimatedCost, 0);
   const estimatedProfit = project.developmentFee - hardwareCost - (project.threeDPrintingCost || 0);
-  const totalCost = hardwareCost + (project.threeDPrintingCost || 0) + project.developmentFee - (project.discount || 0);
-  const balance = totalCost - project.totalPaid;
+  const balance = project.developmentFee - project.totalPaid;
   const daysLeft = differenceInDays(parseISO(project.submissionDate), new Date());
   const progress = Math.min(100, Math.max(0, 100 - (daysLeft / 30) * 100));
 
@@ -250,8 +248,17 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
               <p className="text-2xl font-bold">₹{estimatedProfit.toLocaleString()}</p>
            </Card>
            <Card className="p-4 bg-zinc-900 text-white border-none">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Total Fee</p>
-              <p className="text-xl font-bold">₹{project.developmentFee.toLocaleString()}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Development Fee</p>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-bold">₹</span>
+                <input 
+                  type="number"
+                  value={developmentFee}
+                  onChange={(e) => setDevelopmentFee(e.target.value)}
+                  onBlur={handleUpdateDevelopmentFee}
+                  className="w-full bg-transparent border-none p-0 focus:ring-0 text-xl font-bold text-white"
+                />
+              </div>
            </Card>
            <Card className="p-4 bg-white border-zinc-200">
               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">3D Print Cost</p>
@@ -322,7 +329,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Card className="p-4 bg-zinc-900 text-white border-none">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-1">Total Project Cost</p>
-                <p className="text-xl font-bold">₹{totalCost.toLocaleString()}</p>
+                <p className="text-xl font-bold">₹{project.developmentFee.toLocaleString()}</p>
               </Card>
               <Card className="p-4 bg-emerald-50 border-emerald-100">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Paid</p>

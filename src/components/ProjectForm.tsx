@@ -10,10 +10,6 @@ const projectSchema = z.object({
   university: z.string().min(1, 'University is required'),
   submissionDate: z.string().min(1, 'Submission date is required'),
   developmentFee: z.number().min(0, 'Fee must be positive'),
-  makingFee: z.number().min(0),
-  codingFee: z.number().min(0),
-  threeDPrintingCost: z.number().min(0),
-  discount: z.number().min(0),
   status: z.enum(['Pending', 'In Progress', 'Completed']),
 });
 
@@ -30,10 +26,6 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, initialData 
     defaultValues: {
       status: 'Pending',
       submissionDate: format(new Date(), 'yyyy-MM-dd'),
-      makingFee: 0,
-      codingFee: 0,
-      threeDPrintingCost: 0,
-      discount: 0,
       ...initialData
     }
   });
@@ -65,40 +57,19 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, initialData 
           {errors.submissionDate && <p className="text-rose-500 text-xs mt-1.5 font-medium">{errors.submissionDate.message}</p>}
         </div>
         <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Initial Status</label>
-          <select {...register('status')} className="input-field h-12">
-            <option value="Pending">Pending</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-          </select>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Development Fee (₹)</label>
+          <input {...register('developmentFee', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
+          {errors.developmentFee && <p className="text-rose-500 text-xs mt-1.5 font-medium">{errors.developmentFee.message}</p>}
         </div>
       </div>
 
-      <div className="border-t border-zinc-100 pt-5">
-        <h4 className="text-sm font-bold text-zinc-900 mb-4">Financial Details</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Development Fee (₹)</label>
-            <input {...register('developmentFee', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
-            {errors.developmentFee && <p className="text-rose-500 text-xs mt-1.5 font-medium">{errors.developmentFee.message}</p>}
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Making Fee (₹)</label>
-            <input {...register('makingFee', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Coding Fee (₹)</label>
-            <input {...register('codingFee', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">3D Print Cost (₹)</label>
-            <input {...register('threeDPrintingCost', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Discount (₹)</label>
-            <input {...register('discount', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0" />
-          </div>
-        </div>
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Initial Status</label>
+        <select {...register('status')} className="input-field h-12">
+          <option value="Pending">Pending</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Completed">Completed</option>
+        </select>
       </div>
 
       <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20 sticky bottom-0">
