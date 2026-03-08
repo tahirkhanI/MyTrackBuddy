@@ -13,6 +13,30 @@ export interface Transaction {
   date: string;
   payment_method?: string;
   notes?: string;
+  linkedProjectId?: string; // Link to a specific project
+  created_at: string;
+}
+
+export interface Project {
+  id: string;
+  user_id: string;
+  projectName: string;
+  studentName: string;
+  university: string;
+  submissionDate: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+  developmentFee: number;
+  totalPaid: number;
+  created_at: string;
+}
+
+export interface Component {
+  id: string;
+  projectId: string;
+  componentName: string;
+  estimatedCost: number;
+  actualCost: number;
+  status: 'Needed' | 'Ordered' | 'Available';
   created_at: string;
 }
 

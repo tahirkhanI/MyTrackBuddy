@@ -66,8 +66,12 @@ import {
 import { Transaction, Budget, SavingsGoal, User } from './types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { FinanceProvider, useFinance } from './FinanceContext';
+import { ProjectProvider, useProject } from './ProjectContext';
 import { Card, ProgressRing } from './components/UI';
+import { ProjectBoard } from './components/ProjectBoard';
+import { ProjectDetails } from './components/ProjectDetails';
+import { ProjectForm } from './components/ProjectForm';
+import { Project, Component } from './types';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -92,6 +96,7 @@ const transactionSchema = z.object({
   date: z.string(),
   payment_method: z.string().optional(),
   notes: z.string().optional(),
+  linkedProjectId: z.string().optional(),
 });
 
 const budgetSchema = z.object({
@@ -109,9 +114,9 @@ const savingsSchema = z.object({
 
 export default function App() {
   return (
-    <FinanceProvider>
+    <ProjectProvider>
       <AppContent />
-    </FinanceProvider>
+    </ProjectProvider>
   );
 }
 
@@ -120,28 +125,18 @@ function AppContent() {
     user, 
     loading, 
     stats, 
-    chartData, 
-    categoryData, 
+    projects,
     transactions, 
-    budgets, 
-    savings, 
-    debts,
-    healthScore, 
-    streak, 
-    badges,
+    addProject,
     addTransaction,
-    deleteTransaction,
-    saveBudget,
-    addSavingsGoal,
-    contributeToSavings,
-    addDebt,
-    toggleDebtSettled,
-    deleteDebt
-  } = useFinance();
-  const [view, setView] = useState<'dashboard' | 'transactions' | 'budgets' | 'savings' | 'debts'>('dashboard');
+    addPayment,
+    deleteTransaction
+  } = useProject();
+  const [view, setView] = useState<'dashboard' | 'projects' | 'transactions'>('dashboard');
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isAuthMode, setIsAuthMode] = useState<'login' | 'register'>('login');
   const [authError, setAuthError] = useState<string | null>(null);
-  const [modalType, setModalType] = useState<'transaction' | 'savings' | 'debt' | null>(null);
+  const [modalType, setModalType] = useState<'transaction' | 'project' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -353,31 +348,17 @@ function AppContent() {
             collapsed={isSidebarCollapsed}
           />
           <NavItem 
+            active={view === 'projects'} 
+            onClick={() => setView('projects')} 
+            icon={Target} 
+            label="Project Board" 
+            collapsed={isSidebarCollapsed}
+          />
+          <NavItem 
             active={view === 'transactions'} 
             onClick={() => setView('transactions')} 
             icon={Receipt} 
-            label="Transactions" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={view === 'budgets'} 
-            onClick={() => setView('budgets')} 
-            icon={PieChartIcon} 
-            label="Budgets" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={view === 'savings'} 
-            onClick={() => setView('savings')} 
-            icon={Target} 
-            label="Savings Goals" 
-            collapsed={isSidebarCollapsed}
-          />
-          <NavItem 
-            active={view === 'debts'} 
-            onClick={() => setView('debts')} 
-            icon={HandCoins} 
-            label="Lent & Borrowed" 
+            label="Finance Ledger" 
             collapsed={isSidebarCollapsed}
           />
         </nav>
@@ -418,13 +399,13 @@ function AppContent() {
             <p className="text-zinc-500">Welcome back, {(user.displayName || user.email || '').split(' ')[0]}!</p>
           </div>
           <div className="flex gap-3">
-            <button onClick={exportPDF} className="btn-secondary flex items-center gap-2 min-h-[44px]">
-              <Download className="w-4 h-4" />
-              PDF Report
-            </button>
-            <button onClick={() => setModalType('transaction')} className="btn-primary flex items-center gap-2 min-h-[44px]">
+            <button onClick={() => setModalType('project')} className="btn-primary flex items-center gap-2 min-h-[44px]">
               <Plus className="w-4 h-4" />
-              Add Transaction
+              New Project
+            </button>
+            <button onClick={() => setModalType('transaction')} className="btn-secondary flex items-center gap-2 min-h-[44px]">
+              <Plus className="w-4 h-4" />
+              Log Expense
             </button>
           </div>
         </header>
@@ -439,166 +420,65 @@ function AppContent() {
               <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="px-3 py-1 bg-white/10 rounded-full text-xs font-medium backdrop-blur-md">
-                    {format(new Date(), 'MMMM yyyy')}
+                    Freelance ERP Dashboard
                   </span>
-                  <div className="flex items-center gap-1 text-emerald-400 text-xs font-bold">
-                    <Flame className="w-3 h-3" />
-                    {streak} Month Streak
-                  </div>
                 </div>
-                <h2 className="text-xl text-zinc-400 mb-1">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {(user.displayName || user.email || '').split(' ')[0]} 👋</h2>
+                <h2 className="text-xl text-zinc-400 mb-1">Hardware Developer Console</h2>
                 <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-12">
                   <div>
-                    <p className="text-sm text-zinc-400 mb-1">Total Balance</p>
+                    <p className="text-sm text-zinc-400 mb-1">Total Revenue</p>
                     <h3 className="text-5xl font-bold tracking-tight">
-                      ${stats.balance.toLocaleString()}
+                      ₹{stats.totalRevenue.toLocaleString()}
                     </h3>
                   </div>
                   <div className="flex gap-8">
                     <div>
-                      <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wider font-bold">Monthly Income</p>
-                      <p className="text-xl font-bold text-emerald-400">+${stats.income.toLocaleString()}</p>
+                      <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wider font-bold">Active Projects</p>
+                      <p className="text-xl font-bold text-emerald-400">{stats.activeProjects}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wider font-bold">Monthly Expenses</p>
-                      <p className="text-xl font-bold text-rose-400">-${stats.expenses.toLocaleString()}</p>
+                      <p className="text-xs text-zinc-400 mb-1 uppercase tracking-wider font-bold">Completed</p>
+                      <p className="text-xl font-bold text-indigo-400">{stats.completedProjects}</p>
                     </div>
                   </div>
-                </div>
-                
-                <div className="mt-8 flex flex-wrap gap-3">
-                  {badges.map(badge => (
-                    <div key={badge} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-xl border border-white/10 text-xs font-bold">
-                      <Star className="w-3 h-3 text-amber-400" />
-                      {badge}
-                    </div>
-                  ))}
                 </div>
               </div>
             </Card>
 
             {/* Insights Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <StatCard 
-                title="Savings Rate" 
-                value={`${stats.savingsRate}%`} 
-                icon={Activity} 
-                color="bg-indigo-50 text-indigo-600"
-                message={stats.savingsRate > 20 ? "You're saving like a pro! 🚀" : "Try to save 20% of your income."}
-              />
-              <StatCard 
-                title="Top Spending" 
-                value={stats.topCategory} 
-                icon={Zap} 
-                color="bg-amber-50 text-amber-600"
-                message={stats.topCategory !== 'None' ? `Careful — ${stats.topCategory} expenses are rising.` : "No expenses yet!"}
-              />
-              <StatCard 
-                title="Health Score" 
-                value={healthScore} 
-                icon={Trophy} 
+                title="Total Revenue" 
+                value={`₹${stats.totalRevenue.toLocaleString()}`} 
+                icon={TrendingUp} 
                 color="bg-emerald-50 text-emerald-600"
-                message={healthScore > 80 ? "Excellent financial health!" : "Keep tracking to improve your score."}
+                message="Total earnings from all projects"
               />
-              <Card className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-zinc-500 font-medium">Budget Usage</p>
-                  <h3 className="text-2xl font-bold mt-1">
-                    {stats.currentBudget ? Math.round((stats.expenses / stats.currentBudget) * 100) : 0}%
-                  </h3>
-                </div>
-                <ProgressRing 
-                  progress={stats.currentBudget ? Math.round((stats.expenses / stats.currentBudget) * 100) : 0} 
-                  size={60} 
-                  strokeWidth={6}
-                  color={stats.expenses > stats.currentBudget ? "stroke-rose-500" : "stroke-zinc-900"}
-                />
-              </Card>
+              <StatCard 
+                title="Pending Dues" 
+                value={`₹${stats.pendingDues.toLocaleString()}`} 
+                icon={AlertCircle} 
+                color="bg-amber-50 text-amber-600"
+                message="Fees yet to be collected"
+              />
+              <StatCard 
+                title="Component Expenses" 
+                value={`₹${stats.totalExpenses.toLocaleString()}`} 
+                icon={ArrowDownCircle} 
+                color="bg-rose-50 text-rose-600"
+                message="Hardware & component costs"
+              />
             </div>
 
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <Card className="lg:col-span-2 p-6">
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-lg font-bold">Financial Overview</h3>
-                  <div className="flex gap-2">
-                    <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
-                      <div className="w-3 h-3 rounded-full bg-emerald-500" /> Income
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
-                      <div className="w-3 h-3 rounded-full bg-rose-500" /> Expense
-                    </div>
-                  </div>
-                </div>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData}>
-                      <defs>
-                        <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
-                      />
-                      <Area type="monotone" dataKey="income" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
-                      <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorExpense)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              <Card className="p-6">
-                <h3 className="text-lg font-bold mb-8">Expense Breakdown</h3>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        innerRadius={70}
-                        outerRadius={90}
-                        paddingAngle={8}
-                        dataKey="value"
-                      >
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-6 space-y-3">
-                  {categoryData.slice(0, 4).map((cat, i) => (
-                    <div key={cat.name} className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i] }} />
-                        <span className="text-sm text-zinc-600 font-medium">{cat.name}</span>
-                      </div>
-                      <span className="text-sm font-bold">${cat.value.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-
-            {/* Bottom Row */}
+            {/* Recent Activity */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card className="p-0">
                 <div className="p-6 border-b border-zinc-100 flex justify-between items-center">
-                  <h3 className="text-lg font-bold">Recent Activity</h3>
-                  <button onClick={() => setView('transactions')} className="text-sm font-bold text-zinc-500 hover:text-zinc-900 transition-colors">View All</button>
+                  <h3 className="text-lg font-bold">Recent Transactions</h3>
+                  <button onClick={() => setView('transactions')} className="text-sm font-bold text-zinc-500 hover:text-zinc-900 transition-colors">View Ledger</button>
                 </div>
                 <div className="divide-y divide-zinc-100">
-                  {transactions.slice(0, 4).map(tx => (
+                  {transactions.slice(0, 5).map(tx => (
                     <div key={tx.id} className="p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors">
                       <div className="flex items-center gap-4">
                         <div className={cn("p-2.5 rounded-2xl shrink-0", tx.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
@@ -610,7 +490,7 @@ function AppContent() {
                         </div>
                       </div>
                       <span className={cn("font-bold shrink-0 ml-2", tx.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
-                        {tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()}
+                        {tx.type === 'income' ? '+' : '-'}₹{tx.amount.toLocaleString()}
                       </span>
                     </div>
                   ))}
@@ -618,41 +498,51 @@ function AppContent() {
               </Card>
 
               <Card className="p-6">
-                <h3 className="text-lg font-bold mb-6">Savings Progress</h3>
+                <h3 className="text-lg font-bold mb-6">Quick Project Overview</h3>
                 <div className="space-y-6">
-                  {savings.slice(0, 3).map(goal => {
-                    const progress = Math.min(100, Math.round((goal.current_amount / goal.target_amount) * 100));
+                  {projects.slice(0, 4).map(project => {
+                    const statusColor = project.status === 'Completed' ? 'bg-emerald-500' : project.status === 'In Progress' ? 'bg-indigo-500' : 'bg-amber-500';
                     return (
-                      <div key={goal.id}>
-                        <div className="flex justify-between mb-3">
+                      <div key={project.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-zinc-50 transition-colors cursor-pointer" onClick={() => { setSelectedProject(project); setView('projects'); }}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${statusColor}`} />
                           <div>
-                            <span className="text-sm font-bold block">{goal.name}</span>
-                            <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Target: ${goal.target_amount.toLocaleString()}</span>
+                            <p className="text-sm font-bold text-zinc-900">{project.projectName}</p>
+                            <p className="text-[10px] text-zinc-500 uppercase font-bold">{project.studentName}</p>
                           </div>
-                          <span className="text-sm font-bold text-zinc-900">{progress}%</span>
                         </div>
-                        <div className="w-full bg-zinc-100 rounded-full h-2.5 overflow-hidden">
-                          <motion.div 
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progress}%` }}
-                            className="bg-zinc-900 h-full rounded-full"
-                          />
+                        <div className="text-right">
+                          <p className="text-sm font-bold">₹{project.developmentFee.toLocaleString()}</p>
+                          <p className="text-[10px] text-zinc-400 font-bold">Fee</p>
                         </div>
                       </div>
                     );
                   })}
-                  {savings.length === 0 && (
+                  {projects.length === 0 && (
                     <div className="text-center py-12">
-                      <div className="w-16 h-16 bg-zinc-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Target className="w-8 h-8 text-zinc-300" />
-                      </div>
-                      <p className="text-zinc-500 text-sm font-medium">No savings goals set yet.</p>
-                      <button onClick={() => setView('savings')} className="text-zinc-900 text-sm font-bold mt-2 hover:underline">Create your first goal</button>
+                      <p className="text-zinc-500 text-sm font-medium">No projects yet.</p>
+                      <button onClick={() => setModalType('project')} className="text-zinc-900 text-sm font-bold mt-2 hover:underline">Create your first project</button>
                     </div>
                   )}
                 </div>
               </Card>
             </div>
+          </div>
+        )}
+
+        {view === 'projects' && (
+          <div className="h-full">
+            {selectedProject ? (
+              <ProjectDetails 
+                project={selectedProject} 
+                onClose={() => setSelectedProject(null)} 
+              />
+            ) : (
+              <ProjectBoard 
+                projects={projects} 
+                onProjectClick={(p) => setSelectedProject(p)} 
+              />
+            )}
           </div>
         )}
 
@@ -662,6 +552,7 @@ function AppContent() {
             filters={txFilters} 
             setFilters={setTxFilters} 
             onDelete={deleteTransaction}
+            projects={projects}
             exportCSV={() => {
               const headers = ['Date', 'Type', 'Category', 'Amount', 'Method', 'Notes'];
               const rows = transactions.map(t => [t.date, t.type, t.category, t.amount, t.payment_method || '', t.notes || '']);
@@ -674,149 +565,21 @@ function AppContent() {
             }}
           />
         )}
-
-        {view === 'budgets' && (
-          <div className="space-y-8">
-            <Card className="p-8 max-w-2xl">
-              <h3 className="text-xl font-bold mb-6">Set Monthly Budget</h3>
-              <BudgetForm 
-                currentMonth={format(new Date(), 'yyyy-MM')}
-                onSave={saveBudget} 
-              />
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {budgets.map(budget => {
-                const monthTxs = transactions.filter(t => t.type === 'expense' && t.date.startsWith(budget.month));
-                const spent = monthTxs.reduce((acc, t) => acc + t.amount, 0);
-                const percent = Math.round((spent / budget.amount) * 100);
-                
-                return (
-                  <Card key={budget.id} className="p-6">
-                    <div className="flex justify-between items-center mb-6">
-                      <h4 className="font-bold text-lg">{format(parseISO(budget.month + '-01'), 'MMMM yyyy')}</h4>
-                      <div className={cn(
-                        "px-3 py-1 rounded-full text-xs font-bold",
-                        percent > 100 ? "bg-rose-100 text-rose-700" : percent > 75 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                      )}>
-                        {percent}% Spent
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between text-sm font-medium">
-                        <span className="text-zinc-500">Spent: ${spent.toLocaleString()}</span>
-                        <span className="text-zinc-900">Limit: ${budget.amount.toLocaleString()}</span>
-                      </div>
-                      <div className="w-full bg-zinc-100 rounded-full h-3 overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, percent)}%` }}
-                          className={cn(
-                            "h-full rounded-full",
-                            percent > 100 ? "bg-rose-500" : percent > 75 ? "bg-amber-500" : "bg-zinc-900"
-                          )}
-                        />
-                      </div>
-                      {percent > 90 && (
-                        <div className="flex items-center gap-2 text-rose-600 text-xs font-bold bg-rose-50 p-3 rounded-xl">
-                          <AlertCircle className="w-4 h-4" />
-                          Warning: You have exceeded 90% of your budget!
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {view === 'savings' && (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <button 
-                onClick={() => setModalType('savings')}
-                className="card p-6 border-dashed border-2 border-zinc-200 flex flex-col items-center justify-center text-center hover:bg-zinc-50 transition-all cursor-pointer min-h-[200px] group"
-              >
-                <div className="bg-zinc-100 p-4 rounded-full mb-4 group-hover:scale-110 transition-transform">
-                  <Plus className="w-8 h-8 text-zinc-400" />
-                </div>
-                <h4 className="font-bold">New Goal</h4>
-                <p className="text-sm text-zinc-500">Start saving for your future</p>
-              </button>
-
-              {savings.map(goal => {
-                const progress = Math.min(100, Math.round((goal.current_amount / goal.target_amount) * 100));
-                return (
-                  <Card key={goal.id} className="p-6 flex flex-col">
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <h4 className="font-bold text-lg">{goal.name}</h4>
-                        <p className="text-xs text-zinc-500 font-medium">Deadline: {goal.deadline ? format(parseISO(goal.deadline), 'MMM d, yyyy') : 'No deadline'}</p>
-                      </div>
-                      <div className="bg-zinc-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
-                        {progress}%
-                      </div>
-                    </div>
-                    
-                    <div className="flex-1 space-y-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-bold text-lg">${goal.current_amount.toLocaleString()}</span>
-                        <span className="text-zinc-400 font-medium">of ${goal.target_amount.toLocaleString()}</span>
-                      </div>
-                      <div className="w-full bg-zinc-100 rounded-full h-2.5 overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${progress}%` }}
-                          className="bg-zinc-900 h-full rounded-full"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-2">
-                      <button 
-                        onClick={async () => {
-                          const amount = parseFloat(prompt('How much would you like to contribute?') || '0');
-                          if (amount > 0) {
-                            await contributeToSavings(goal.id, amount);
-                          }
-                        }}
-                        className="btn-primary flex-1 text-xs py-3"
-                      >
-                        Contribute
-                      </button>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {view === 'debts' && (
-          <DebtsView 
-            debts={debts}
-            onAdd={() => setModalType('debt')}
-            onToggleSettled={toggleDebtSettled}
-            onDelete={deleteDebt}
-          />
-        )}
       </main>
 
       {/* Mobile Bottom Nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-lg border-t border-zinc-200 px-6 py-3 flex justify-between items-center z-40">
         <BottomNavItem active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={LayoutDashboard} />
-        <BottomNavItem active={view === 'transactions'} onClick={() => setView('transactions')} icon={Receipt} />
+        <BottomNavItem active={view === 'projects'} onClick={() => setView('projects')} icon={Target} />
         <div className="relative -top-6">
           <button 
-            onClick={() => setModalType('transaction')}
+            onClick={() => setModalType('project')}
             className="bg-zinc-900 text-white p-4 rounded-2xl shadow-xl shadow-zinc-900/40 active:scale-95 transition-transform"
           >
             <Plus className="w-6 h-6" />
           </button>
         </div>
-        <BottomNavItem active={view === 'budgets'} onClick={() => setView('budgets')} icon={PieChartIcon} />
-        <BottomNavItem active={view === 'debts'} onClick={() => setView('debts')} icon={HandCoins} />
+        <BottomNavItem active={view === 'transactions'} onClick={() => setView('transactions')} icon={Receipt} />
       </nav>
 
       {/* Modals */}
@@ -844,7 +607,7 @@ function AppContent() {
               </button>
               
               <h3 className="text-xl font-bold mb-6">
-                {modalType === 'transaction' ? 'Add New Transaction' : modalType === 'savings' ? 'Create Savings Goal' : 'Add Debt Record'}
+                {modalType === 'transaction' ? 'Log Hardware Expense' : 'Create New Project'}
               </h3>
               
               {modalType === 'transaction' ? (
@@ -854,19 +617,12 @@ function AppContent() {
                     setModalType(null);
                   }} 
                 />
-              ) : modalType === 'savings' ? (
-                <SavingsGoalForm 
+              ) : (
+                <ProjectForm 
                   onSubmit={async (data: any) => {
-                    await addSavingsGoal(data);
+                    await addProject(data);
                     setModalType(null);
                   }} 
-                />
-              ) : (
-                <DebtForm 
-                  onSubmit={async (data: any) => {
-                    await addDebt(data);
-                    setModalType(null);
-                  }}
                 />
               )}
             </motion.div>
@@ -926,7 +682,7 @@ const StatCard = ({ title, value, icon: Icon, color, message }: any) => (
   </Card>
 );
 
-const TransactionsView = ({ transactions, filters, setFilters, onDelete, exportCSV }: any) => {
+const TransactionsView = ({ transactions, filters, setFilters, onDelete, exportCSV, projects }: any) => {
   const filteredTxs = useMemo(() => {
     return transactions
       .filter((tx: any) => {
@@ -1018,42 +774,46 @@ const TransactionsView = ({ transactions, filters, setFilters, onDelete, exportC
                     <tr>
                       <th className="px-6 py-4">Date</th>
                       <th className="px-6 py-4">Category</th>
-                      <th className="px-6 py-4">Type</th>
+                      <th className="px-6 py-4">Project</th>
                       <th className="px-6 py-4">Amount</th>
                       <th className="px-6 py-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {txs.map(tx => (
-                      <tr key={tx.id} className="hover:bg-zinc-50/50 transition-colors group">
-                        <td className="px-6 py-4 text-xs font-medium text-zinc-500">{format(parseISO(tx.date), 'MMM d')}</td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm font-bold text-zinc-900">{tx.category}</span>
-                          {tx.notes && <p className="text-[10px] text-zinc-400 font-medium">{tx.notes}</p>}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                            tx.type === 'income' ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                          )}>
-                            {tx.type}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={cn("text-sm font-bold", tx.type === 'income' ? "text-emerald-600" : "text-zinc-900")}>
-                            {tx.type === 'income' ? '+' : '-'}${tx.amount.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button 
-                            onClick={() => onDelete(tx.id)}
-                            className="p-2 text-zinc-300 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {txs.map(tx => {
+                      const linkedProject = projects.find((p: any) => p.id === tx.linkedProjectId);
+                      return (
+                        <tr key={tx.id} className="hover:bg-zinc-50/50 transition-colors group">
+                          <td className="px-6 py-4 text-xs font-medium text-zinc-500">{format(parseISO(tx.date), 'MMM d')}</td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm font-bold text-zinc-900">{tx.category}</span>
+                            {tx.notes && <p className="text-[10px] text-zinc-400 font-medium">{tx.notes}</p>}
+                          </td>
+                          <td className="px-6 py-4">
+                            {linkedProject ? (
+                              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
+                                {linkedProject.projectName}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-zinc-400">General</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn("text-sm font-bold", tx.type === 'income' ? "text-emerald-600" : "text-zinc-900")}>
+                              {tx.type === 'income' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button 
+                              onClick={() => onDelete(tx.id)}
+                              className="p-2 text-zinc-300 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1144,6 +904,7 @@ const AuthForm = ({ mode, onSubmit, onGoogleLogin, error }: any) => {
 };
 
 const TransactionForm = ({ onSubmit }: any) => {
+  const { projects } = useProject();
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<z.infer<typeof transactionSchema>>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
@@ -1156,9 +917,9 @@ const TransactionForm = ({ onSubmit }: any) => {
   const category = watch('category');
   const paymentMethod = watch('payment_method');
 
-  const incomeCategories = ['Allowance', 'Salary', 'Freelance', 'Gift', 'Other'];
-  const expenseCategories = ['Food', 'Transport', 'Utilities', 'Entertainment', 'Rent', 'Education', 'Shopping', 'Other'];
-  const paymentMethods = ['Cash', 'Credit/Debit Card', 'UPI', 'Bank Transfer', 'Other'];
+  const incomeCategories = ['Project Advance', 'Final Payment', 'Partial Payment', 'Other'];
+  const expenseCategories = ['Hardware Component', 'Tools', 'Shipping', 'Service Subscription', 'Other'];
+  const paymentMethods = ['Cash', 'UPI', 'Bank Transfer', 'Credit/Debit Card', 'Other'];
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -1171,10 +932,20 @@ const TransactionForm = ({ onSubmit }: any) => {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Amount</label>
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Amount (₹)</label>
           <input {...register('amount', { valueAsNumber: true })} type="number" step="0.01" className="input-field h-12" placeholder="0.00" />
           {errors.amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Amount is required</p>}
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Linked Project (Optional)</label>
+        <select {...register('linkedProjectId')} className="input-field h-12">
+          <option value="">None / General</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>{p.projectName} ({p.studentName})</option>
+          ))}
+        </select>
       </div>
       
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1250,191 +1021,5 @@ const TransactionForm = ({ onSubmit }: any) => {
         {isSubmitting ? 'Saving...' : 'Add Transaction'}
       </button>
     </form>
-  );
-};
-
-const BudgetForm = ({ currentMonth, onSave }: any) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof budgetSchema>>({
-    resolver: zodResolver(budgetSchema),
-    defaultValues: {
-      month: currentMonth
-    }
-  });
-
-  return (
-    <form onSubmit={handleSubmit(onSave)} className="flex flex-col sm:flex-row gap-4 items-end">
-      <div className="w-full sm:flex-1">
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Month</label>
-        <input {...register('month')} type="month" className="input-field h-12" />
-      </div>
-      <div className="w-full sm:flex-1">
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Budget Amount</label>
-        <input {...register('amount', { valueAsNumber: true })} type="number" className="input-field h-12" placeholder="0.00" />
-        {errors.amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Amount is required</p>}
-      </div>
-      <button disabled={isSubmitting} className="btn-primary w-full sm:w-auto px-8 py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
-        Save
-      </button>
-    </form>
-  );
-};
-
-const SavingsGoalForm = ({ onSubmit }: any) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof savingsSchema>>({
-    resolver: zodResolver(savingsSchema)
-  });
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Goal Name</label>
-        <input {...register('name')} className="input-field h-12" placeholder="e.g., New Laptop, Vacation" />
-        {errors.name && <p className="text-rose-500 text-xs mt-1.5 font-medium">Goal name is required</p>}
-      </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Target Amount</label>
-        <input {...register('target_amount', { valueAsNumber: true })} type="number" step="0.01" className="input-field h-12" placeholder="0.00" />
-        {errors.target_amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Target amount is required</p>}
-      </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Deadline (Optional)</label>
-        <input {...register('deadline')} type="date" className="input-field h-12" />
-      </div>
-      <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
-        {isSubmitting ? 'Saving...' : 'Create Goal'}
-      </button>
-    </form>
-  );
-};
-
-const debtSchema = z.object({
-  person: z.string().min(1),
-  amount: z.number().positive(),
-  type: z.enum(['lent', 'borrowed']),
-  date: z.string(),
-});
-
-const DebtForm = ({ onSubmit }: any) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof debtSchema>>({
-    resolver: zodResolver(debtSchema),
-    defaultValues: {
-      date: format(new Date(), 'yyyy-MM-dd'),
-      type: 'lent'
-    }
-  });
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Person's Name</label>
-        <input {...register('person')} className="input-field h-12" placeholder="e.g., Alex, Sarah" />
-        {errors.person && <p className="text-rose-500 text-xs mt-1.5 font-medium">Name is required</p>}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Type</label>
-          <select {...register('type')} className="input-field h-12">
-            <option value="lent">I Lent</option>
-            <option value="borrowed">I Borrowed</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Amount</label>
-          <input {...register('amount', { valueAsNumber: true })} type="number" step="0.01" className="input-field h-12" placeholder="0.00" />
-          {errors.amount && <p className="text-rose-500 text-xs mt-1.5 font-medium">Amount is required</p>}
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1.5">Date</label>
-        <input {...register('date')} type="date" className="input-field h-12" />
-      </div>
-      <button disabled={isSubmitting} className="btn-primary w-full py-4 text-sm font-bold shadow-xl shadow-zinc-900/20">
-        {isSubmitting ? 'Saving...' : 'Add Record'}
-      </button>
-    </form>
-  );
-};
-
-const DebtsView = ({ debts, onAdd, onToggleSettled, onDelete }: any) => {
-  const lentTotal = debts.filter((d: any) => d.type === 'lent' && !d.settled).reduce((acc: number, d: any) => acc + d.amount, 0);
-  const borrowedTotal = debts.filter((d: any) => d.type === 'borrowed' && !d.settled).reduce((acc: number, d: any) => acc + d.amount, 0);
-
-  return (
-    <div className="space-y-8">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <Card className="p-6 bg-emerald-50 border-emerald-100">
-          <p className="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Lent</p>
-          <h3 className="text-3xl font-bold text-emerald-700">${lentTotal.toLocaleString()}</h3>
-          <p className="text-[10px] text-emerald-600/60 font-medium mt-2">Money people owe you</p>
-        </Card>
-        <Card className="p-6 bg-rose-50 border-rose-100">
-          <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mb-1">Total Borrowed</p>
-          <h3 className="text-3xl font-bold text-rose-700">${borrowedTotal.toLocaleString()}</h3>
-          <p className="text-[10px] text-rose-600/60 font-medium mt-2">Money you owe others</p>
-        </Card>
-      </div>
-
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-bold">Debt Records</h3>
-        <button onClick={onAdd} className="btn-primary flex items-center gap-2 text-xs py-2 px-4">
-          <Plus className="w-4 h-4" /> Add Record
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {debts.map((debt: any) => (
-          <Card key={debt.id} className={cn("p-4 group", debt.settled && "opacity-60")}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={cn(
-                  "p-2.5 rounded-2xl",
-                  debt.type === 'lent' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
-                )}>
-                  <HandCoins className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm">{debt.person}</h4>
-                  <p className="text-[10px] text-zinc-500 font-medium">
-                    {debt.type === 'lent' ? 'You lent' : 'You borrowed'} on {format(parseISO(debt.date), 'MMM d, yyyy')}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className={cn(
-                  "font-bold text-lg",
-                  debt.type === 'lent' ? "text-emerald-600" : "text-rose-600"
-                )}>
-                  ${debt.amount.toLocaleString()}
-                </p>
-                <div className="flex items-center gap-2 justify-end mt-1">
-                  <button 
-                    onClick={() => onToggleSettled(debt.id, !debt.settled)}
-                    className={cn(
-                      "p-1 rounded-md transition-colors",
-                      debt.settled ? "text-emerald-600 bg-emerald-50" : "text-zinc-300 hover:text-emerald-600 hover:bg-emerald-50"
-                    )}
-                  >
-                    {debt.settled ? <CheckCircle2 className="w-4 h-4" /> : <Circle className="w-4 h-4" />}
-                  </button>
-                  <button 
-                    onClick={() => onDelete(debt.id)}
-                    className="p-1 text-zinc-300 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        ))}
-        {debts.length === 0 && (
-          <div className="md:col-span-2 text-center py-12 bg-zinc-50 rounded-3xl border-2 border-dashed border-zinc-200">
-            <HandCoins className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-            <p className="text-zinc-500 font-medium">No debt records found.</p>
-            <button onClick={onAdd} className="text-zinc-900 font-bold mt-2 hover:underline">Add your first record</button>
-          </div>
-        )}
-      </div>
-    </div>
   );
 };
