@@ -53,7 +53,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { auth } from './firebase';
 import { 
   signInWithEmailAndPassword, 
@@ -153,6 +153,15 @@ function AppContent() {
     setIsSidebarOpen(false);
   }, [view]);
 
+  useEffect(() => {
+    if (selectedProject) {
+      const updated = projects.find(p => p.id === selectedProject.id);
+      if (updated) {
+        setSelectedProject(updated);
+      }
+    }
+  }, [projects, selectedProject?.id]);
+
   const handleLogout = async () => {
     await signOut(auth);
   };
@@ -210,14 +219,14 @@ function AppContent() {
   };
 
   const exportPDF = () => {
-    const doc = new jsPDF() as any;
+    const doc = new jsPDF();
     doc.setFontSize(20);
     doc.text('0&1 Project Solutions - Financial Report', 14, 22);
     doc.setFontSize(12);
     doc.text(`Generated on: ${format(new Date(), 'PPP')}`, 14, 30);
     doc.text(`User: ${user?.displayName || user?.email}`, 14, 38);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 45,
       head: [['Metric', 'Value']],
       body: [

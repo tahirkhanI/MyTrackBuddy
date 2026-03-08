@@ -24,7 +24,7 @@ import {
 import { format, parseISO, differenceInDays } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 interface ProjectDetailsProps {
   project: Project;
@@ -43,8 +43,6 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
     transactions
   } = useProject();
 
-  const [components, setComponents] = useState<Component[]>([]);
-  const [loadingComponents, setLoadingComponents] = useState(true);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [showAddComponent, setShowAddComponent] = useState(false);
@@ -54,12 +52,12 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
   const [developmentFee, setDevelopmentFee] = useState(project.developmentFee?.toString() || '0');
   const [pendingNotes, setPendingNotes] = useState(project.pendingNotes || '');
 
+  const components = project.components || [];
+
   useEffect(() => {
-    const unsubscribe = subscribeToComponents(project.id, (data) => {
-      setComponents(data);
-      setLoadingComponents(false);
-    });
-    return () => unsubscribe();
+    setThreeDPrintingCost(project.threeDPrintingCost?.toString() || '0');
+    setDevelopmentFee(project.developmentFee?.toString() || '0');
+    setPendingNotes(project.pendingNotes || '');
   }, [project.id]);
 
   const handleAddPayment = async () => {
@@ -117,7 +115,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
 
   const generateInvoice = () => {
     try {
-      const doc = new jsPDF() as any;
+      const doc = new jsPDF();
       const totalProjectCost = project.developmentFee;
       const amountPaid = project.totalPaid;
       const pendingAmount = totalProjectCost - amountPaid;
@@ -152,7 +150,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
         ['Amount Paid', `₹${amountPaid.toLocaleString()}`]
       ];
 
-      doc.autoTable({
+      autoTable(doc, {
         startY: 85,
         head: [['Description', 'Amount']],
         body: tableData,
@@ -421,7 +419,7 @@ export const ProjectDetails: React.FC<ProjectDetailsProps> = ({ project, onClose
                     </button>
                   </div>
                 ))}
-                {components.length === 0 && !loadingComponents && (
+                {components.length === 0 && (
                   <div className="p-8 text-center text-zinc-400">
                     <p className="text-sm font-medium">No components added yet.</p>
                   </div>

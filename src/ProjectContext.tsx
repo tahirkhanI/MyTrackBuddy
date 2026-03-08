@@ -61,16 +61,30 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!user) return;
     setLoading(true);
 
-    const unsubProjects = onSnapshot(collection(db, 'users', user.uid, 'projects'), (snapshot) => {
-      const projs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-      setProjects(projs);
-    });
+    const unsubProjects = onSnapshot(collection(db, 'users', user.uid, 'projects'), 
+      (snapshot) => {
+        const projs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+        setProjects(projs);
+      },
+      (error) => {
+        console.error("Projects listener error:", error);
+        if (error.code === 'permission-denied') {
+          console.warn("Permission denied for projects. Check Firestore rules.");
+        }
+      }
+    );
 
-    const unsubTxs = onSnapshot(collection(db, 'users', user.uid, 'transactions'), (snapshot) => {
-      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(txs);
-      setLoading(false);
-    });
+    const unsubTxs = onSnapshot(collection(db, 'users', user.uid, 'transactions'), 
+      (snapshot) => {
+        const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+        setTransactions(txs);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("Transactions listener error:", error);
+        setLoading(false);
+      }
+    );
 
     return () => {
       unsubProjects();
@@ -100,35 +114,63 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addComponent = async (projectId: string, component: Omit<Component, 'id' | 'projectId' | 'created_at'>) => {
     if (!user) return;
-    await addDoc(collection(db, 'users', user.uid, 'projects', projectId, 'components'), {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newComponent: Component = {
       ...component,
+      id: Math.random().toString(36).substr(2, 9),
       projectId,
       created_at: new Date().toISOString()
+    };
+
+    const updatedComponents = [...(project.components || []), newComponent];
+    await updateDoc(doc(db, 'users', user.uid, 'projects', projectId), {
+      components: updatedComponents
     });
   };
 
   const updateComponent = async (projectId: string, componentId: string, updates: Partial<Component>) => {
     if (!user) return;
-    await updateDoc(doc(db, 'users', user.uid, 'projects', projectId, 'components', componentId), updates);
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedComponents = (project.components || []).map(c => 
+      c.id === componentId ? { ...c, ...updates } : c
+    );
+
+    await updateDoc(doc(db, 'users', user.uid, 'projects', projectId), {
+      components: updatedComponents
+    });
   };
 
   const deleteComponent = async (projectId: string, componentId: string) => {
     if (!user) return;
-    await deleteDoc(doc(db, 'users', user.uid, 'projects', projectId, 'components', componentId));
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedComponents = (project.components || []).filter(c => c.id !== componentId);
+
+    await updateDoc(doc(db, 'users', user.uid, 'projects', projectId), {
+      components: updatedComponents
+    });
   };
 
   const getComponents = async (projectId: string) => {
-    if (!user) return [];
-    const snapshot = await getDocs(collection(db, 'users', user.uid, 'projects', projectId, 'components'));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Component));
+    const project = projects.find(p => p.id === projectId);
+    return project?.components || [];
   };
 
   const subscribeToComponents = (projectId: string, callback: (components: Component[]) => void) => {
-    if (!user) return () => {};
-    return onSnapshot(collection(db, 'users', user.uid, 'projects', projectId, 'components'), (snapshot) => {
-      const components = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Component));
-      callback(components);
-    });
+    // Since components are now part of the project document, 
+    // we can just use the project state which is already being updated by the main projects listener.
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      callback(project.components || []);
+    }
+    
+    // Return a dummy unsubscribe function
+    return () => {};
   };
 
   const addTransaction = async (tx: Omit<Transaction, 'id' | 'user_id' | 'created_at'>) => {

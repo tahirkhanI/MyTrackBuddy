@@ -33,6 +33,7 @@ export interface Project {
   totalPaid: number;
   pendingNotes?: string;
   created_at: string;
+  components?: Component[];
 }
 
 export interface Component {
