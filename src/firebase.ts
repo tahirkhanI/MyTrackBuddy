@@ -12,8 +12,26 @@ const firebaseConfig = {
   measurementId: (import.meta as any).env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
+// Validate config
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'undefined') {
+  console.error("Firebase API Key is missing. Please set VITE_FIREBASE_API_KEY in your environment variables.");
+}
+
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+let app;
+try {
+  if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'undefined') {
+    throw new Error("Firebase API Key is missing");
+  }
+  app = initializeApp(firebaseConfig);
+} catch (error) {
+  console.error("Firebase initialization failed:", error);
+  app = {
+    name: '[DEFAULT]',
+    options: firebaseConfig,
+    automaticDataCollectionEnabled: false
+  } as any;
+}
 
 // Export services to use them in your app
 export const auth = getAuth(app);
