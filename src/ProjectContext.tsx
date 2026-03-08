@@ -222,14 +222,17 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return acc + projectComponentCosts;
     }, 0);
 
-    // Total Potential Profit = Total Project Value - Total Component Costs
-    const totalPotentialProfit = totalProjectValue - totalComponentCosts;
+    const total3DPrintingCosts = projects.reduce((acc, p) => acc + (p.threeDPrintingCost || 0), 0);
+
+    // Total Potential Profit = Total Project Value - Total Component Costs - 3D Printing Costs
+    const totalPotentialProfit = totalProjectValue - totalComponentCosts - total3DPrintingCosts;
     
     return {
       totalRevenue, // Actual money received
       totalExpenses, // Actual money spent (from transactions)
       totalProjectValue, // Total value of all contracts
       totalComponentCosts,
+      total3DPrintingCosts,
       pendingDues,
       balance: totalRevenue - totalExpenses,
       estimatedTotalProfit: totalPotentialProfit,

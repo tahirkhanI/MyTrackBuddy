@@ -438,9 +438,9 @@ function AppContent() {
                 <h2 className="text-xl text-zinc-400 mb-1">Hardware Developer Console</h2>
                 <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-12">
                   <div>
-                    <p className="text-sm text-zinc-400 mb-1">Total Project Value</p>
+                    <p className="text-sm text-zinc-400 mb-1">Total Estimated Profit</p>
                     <h3 className="text-5xl font-bold tracking-tight">
-                      ₹{stats.totalProjectValue.toLocaleString()}
+                      ₹{stats.estimatedTotalProfit.toLocaleString()}
                     </h3>
                   </div>
                   <div className="flex gap-8">
@@ -481,11 +481,11 @@ function AppContent() {
                 message="Hardware & component expenses"
               />
               <StatCard 
-                title="Total Potential Profit" 
-                value={`₹${stats.estimatedTotalProfit.toLocaleString()}`} 
+                title="Total Project Value" 
+                value={`₹${stats.totalProjectValue.toLocaleString()}`} 
                 icon={TrendingUp} 
                 color="bg-indigo-50 text-indigo-600"
-                message="Profit after all hardware costs"
+                message="Total value of all contracts"
               />
             </div>
 
@@ -522,7 +522,7 @@ function AppContent() {
                   {projects.slice(0, 4).map(project => {
                     const statusColor = project.status === 'Completed' ? 'bg-emerald-500' : project.status === 'In Progress' ? 'bg-indigo-500' : 'bg-amber-500';
                     const componentCosts = (project.components || []).reduce((sum, c) => sum + (c.actualCost || c.estimatedCost || 0), 0);
-                    const projectProfit = project.developmentFee - componentCosts;
+                    const projectProfit = project.developmentFee - componentCosts - (project.threeDPrintingCost || 0);
                     
                     return (
                       <div key={project.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-zinc-50 transition-colors cursor-pointer" onClick={() => { setSelectedProject(project); setView('projects'); }}>
