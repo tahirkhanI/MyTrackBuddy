@@ -467,7 +467,7 @@ function AppContent() {
                 message="Total payments received"
               />
               <StatCard 
-                title="Pending Dues" 
+                title="Total Remaining Balance" 
                 value={`₹${stats.pendingDues.toLocaleString()}`} 
                 icon={AlertCircle} 
                 color="bg-amber-50 text-amber-600"
@@ -521,8 +521,7 @@ function AppContent() {
                 <div className="space-y-6">
                   {projects.slice(0, 4).map(project => {
                     const statusColor = project.status === 'Completed' ? 'bg-emerald-500' : project.status === 'In Progress' ? 'bg-indigo-500' : 'bg-amber-500';
-                    const componentCosts = (project.components || []).reduce((sum, c) => sum + (c.actualCost || c.estimatedCost || 0), 0);
-                    const projectProfit = project.developmentFee - componentCosts - (project.threeDPrintingCost || 0);
+                    const remainingBalance = (project.developmentFee || 0) - (project.totalPaid || 0);
                     
                     return (
                       <div key={project.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-zinc-50 transition-colors cursor-pointer" onClick={() => { setSelectedProject(project); setView('projects'); }}>
@@ -534,8 +533,8 @@ function AppContent() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-bold text-emerald-600">₹{projectProfit.toLocaleString()}</p>
-                          <p className="text-[10px] text-zinc-400 font-bold uppercase">Profit</p>
+                          <p className="text-sm font-bold text-amber-600">₹{remainingBalance.toLocaleString()}</p>
+                          <p className="text-[10px] text-zinc-400 font-bold uppercase">Remaining</p>
                         </div>
                       </div>
                     );
